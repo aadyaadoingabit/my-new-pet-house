@@ -202,6 +202,8 @@ export function buildWorld(scene, bots) {
     }
   }
 
+  world.cutWalls.forEach(w => { w.mesh.userData.dynamic = true; });
+
   // wallpaper on the back wall, one pattern per room
   const papers = [
     [-10, -3, { bg: '#e8ddff', flowers: ['#ff9fc8', '#ffffff', '#ffd93d'] }],
@@ -250,6 +252,7 @@ export function buildWorld(scene, bots) {
       approach: [-6.9, -5.0], pose: 'lie', seat: { x: -8.2, y: 0.6, z: -4.5, ry: 0 } });
 
     const ns = group(scene, -9.5, -6.5);
+    ns.userData.flatten = true;
     box(ns, 0.52, 0.56, 0.46, '#ffffff', 0, 0, 0, { round: 0.08 });
     cyl(ns, 0.06, 0.09, 0.16, '#ffd93d', 0, 0.56, 0);
     const shade = ball(ns, 0.18, '#fff1a8', 0, 0.86, 0, { emissive: '#ffe48a', ei: 0.35 });
@@ -264,6 +267,7 @@ export function buildWorld(scene, bots) {
     cyl(desk, 0.07, 0.06, 0.12, '#a98bff', 0.55, 0.78, -0.15);
     flower(-3.75, -6.65, { size: 0.26, stem: 1.0, y: 0.84 });
     const chair = group(scene, -4.3, -5.8);
+    chair.userData.flatten = true;
     box(chair, 0.5, 0.08, 0.48, '#a98bff', 0, 0.42, 0, { round: 0.04 });
     box(chair, 0.5, 0.55, 0.08, '#a98bff', 0, 0.46, 0.21, { round: 0.04 });
     for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) cyl(chair, 0.03, 0.03, 0.42, '#ffffff', lx, 0, lz);
@@ -336,6 +340,7 @@ export function buildWorld(scene, bots) {
     cyl(d, 0.015, 0.015, 0.42, '#ff5fa2', -0.72, 0.8, -0.2);
     ball(d, 0.1, '#fff1a8', -0.72, 1.24, -0.16, { emissive: '#ffe48a', ei: 0.3 });
     const ch = group(scene, 5, -5.75);
+    ch.userData.flatten = true;
     cyl(ch, 0.27, 0.27, 0.1, '#ff5fa2', 0, 0.4, 0);
     box(ch, 0.5, 0.6, 0.1, '#ff5fa2', 0, 0.48, 0.24, { round: 0.05 });
     cyl(ch, 0.03, 0.03, 0.4, '#ffffff', 0, 0, 0);
@@ -416,6 +421,7 @@ export function buildWorld(scene, bots) {
     const rug = addMesh(scene, new THREE.CircleGeometry(1.3, 40), toon('#ffffff', { outline: false, map: patternTexture({ bg: '#3b2a5f', flowers: ['#fff1a8', '#ff9fc8', '#bfe8ff'], stars: true, size: 26 }) }), 13, 0.02, -3.6, false);
     rug.rotation.x = -Math.PI / 2;
     const disco = ball(scene, 0.22, '#e8e8f8', 13, 2.25, -3.6, { seg: 10, emissive: '#ffffff', ei: 0.2 });
+    disco.userData.dynamic = true;
     world.animated.push((t, dt) => { disco.rotation.y += dt * (world.musicPlaying ? 1.5 : 0.3); });
     cyl(scene, 0.008, 0.008, 0.3, INK, 13, 2.45, -3.6);
   }
@@ -453,6 +459,7 @@ export function buildWorld(scene, bots) {
       approach: [-8.55, 4.5], face: [-9.6, 4.5] });
 
     const tb = group(scene, -5.6, 4.3);
+    tb.userData.flatten = true;
     cyl(tb, 0.78, 0.78, 0.07, '#ffffff', 0, 0.7, 0, { seg: 32 });
     cyl(tb, 0.07, 0.3, 0.7, '#ff9fc8', 0, 0, 0);
     cyl(tb, 0.17, 0.11, 0.07, '#ffd93d', 0, 0.77, 0);
@@ -461,6 +468,7 @@ export function buildWorld(scene, bots) {
     ball(tb, 0.055, '#7be36b', 0.02, 0.88, 0.06);
     for (const a of [0, Math.PI]) {
       const c = group(scene, -5.6 + Math.cos(a) * 1.05, 4.3, -a + Math.PI / 2);
+      c.userData.flatten = true;
       box(c, 0.46, 0.08, 0.46, '#6fdcb9', 0, 0.42, 0, { round: 0.04 });
       box(c, 0.46, 0.5, 0.08, '#6fdcb9', 0, 0.46, -0.2, { round: 0.04 });
       for (const [lx, lz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) cyl(c, 0.03, 0.03, 0.42, '#ffffff', lx, 0, lz);
@@ -491,6 +499,7 @@ export function buildWorld(scene, bots) {
       approach: [0.75, 2.5], pose: 'sit', seat: { x: 0.75, y: 0.52, z: 3.42, ry: Math.PI } });
 
     const ct = group(scene, 0.75, 1.85);
+    ct.userData.flatten = true;
     box(ct, 1.05, 0.08, 0.6, '#ffffff', 0, 0.36, 0, { round: 0.04 });
     for (const [lx, lz] of [[-0.45, -0.22], [0.45, -0.22], [-0.45, 0.22], [0.45, 0.22]]) cyl(ct, 0.03, 0.03, 0.36, '#ffd93d', lx, 0, lz);
     const rug = addMesh(scene, new THREE.CircleGeometry(1.6, 48), toon('#ffffff', { outline: false, map: patternTexture({ bg: '#fff1a8', flowers: RAINBOW, size: 30 }) }), 0.75, 0.02, 2.6, false);
@@ -625,6 +634,7 @@ export function buildWorld(scene, bots) {
 
     const pond = group(scene, 5, 12.6);
     const water = cyl(pond, 1.6, 1.6, 0.04, '#7fd4ff', 0, 0.01, 0, { seg: 40, shadow: false, outline: false });
+    water.userData.dynamic = true;
     world.animated.push(t => { water.position.y = 0.03 + Math.sin(t * 1.5) * 0.004; });
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
@@ -641,6 +651,7 @@ export function buildWorld(scene, bots) {
 
     const tree = (x, z, s = 1, crown = '#9be37a', gratitude = false, happy = false) => {
       const g = group(scene, x, z);
+      if (!gratitude) g.userData.flatten = true;
       cyl(g, 0.2 * s, 0.3 * s, 2.2 * s, '#c98f62');
       ball(g, 1.5 * s, crown, 0, 3.0 * s, 0, { seg: 18 });
       ball(g, 0.95 * s, crown, 0.95 * s, 2.5 * s, 0.4 * s, { seg: 14 });
@@ -675,6 +686,7 @@ export function buildWorld(scene, bots) {
       for (let x = x0 + 0.3; x < x1 - 0.1; x += 0.55) {
         const fl = makeFlower({ size: 0.32, stem: 0.6, petals: 8, colors: [RAINBOW[i++ % 6]], face: { eyes: 'happy', mouth: 'smile' } });
         fl.group.position.set(x, 0.12, 7.45);
+        fl.group.userData.flatten = true;
         scene.add(fl.group);
       }
     }
@@ -689,15 +701,18 @@ export function buildWorld(scene, bots) {
 
     for (const [x, z] of [[-0.6, 9.6], [1.6, 13.4], [-0.6, 16.2]]) {
       const post = group(scene, x, z);
+      post.userData.flatten = true;
       cyl(post, 0.05, 0.07, 2.0, '#ffffff');
       ball(post, 0.16, '#fff1a8', 0, 2.12, 0, { emissive: '#ffe48a', ei: 0.6, shadow: false });
       const l = new THREE.PointLight('#ffd9b0', 0, 9, 1.4);
       l.position.set(0, 2.1, 0);
+      l.userData.minor = true;
       post.add(l);
       world.lamps.push(l);
     }
     const porch = new THREE.PointLight('#ffd9b0', 0, 7, 1.5);
     porch.position.set(0.5, 2.4, 7.5);
+    porch.userData.minor = true;
     scene.add(porch);
     world.lamps.push(porch);
 
@@ -769,6 +784,7 @@ export function buildWorld(scene, bots) {
     for (let i = 0; i < 4; i++) {
       const f = ball(aq, 0.04, ['#ff9f43', '#ffd93d', '#ff5fa2', '#4fc3ff'][i], 0, 0.95, 0, { seg: 8, shadow: false });
       f.scale.set(1.6, 1, 0.6);
+      f.userData.dynamic = true;
       fish.push(f);
     }
     world.animated.push(t => fish.forEach((f, i) => {
@@ -789,12 +805,14 @@ export function buildWorld(scene, bots) {
     ff.group.position.y = 1.4;
     fo.add(ff.group);
     const spray = ball(fo, 0.12, '#bfe8ff', 0, 1.85, 0, { opacity: 0.7, shadow: false });
+    spray.userData.dynamic = true;
     world.animated.push(t => { spray.scale.setScalar(1 + Math.sin(t * 6) * 0.15); });
 
     const cat = decor('cat', 2.3, 4.7, -0.6);
     const fur = '#fff6ec';
     const cb = ball(cat, 0.2, fur, 0, 0.19, 0);
     cb.scale.set(0.95, 0.85, 1.35);
+    cb.userData.dynamic = true;
     const head = group(cat, 0, 0.24, 0, 0.42);
     ball(head, 0.16, fur, 0, 0, 0);
     for (const ex of [-0.08, 0.08]) addMesh(head, new THREE.ConeGeometry(0.055, 0.1, 12), toon(fur), ex, 0.14, 0).rotation.z = -ex * 2;
@@ -903,7 +921,11 @@ export function buildWorld(scene, bots) {
     world.hemi.color.set(dayF > 0.3 ? '#ffffff' : '#8f8ae0');
     moonLight.intensity = (1 - dayF) * 0.45;
     const night = 1 - dayF;
-    world.lamps.forEach(l => { l.intensity = night * (l.parent === scene ? 9 : 5); });
+    const lampsOn = night > 0.05;
+    world.lamps.forEach(l => {
+      l.intensity = night * (l.parent === scene ? 9 : 5);
+      l.visible = lampsOn && !(l.userData.minor && world.lowPower);
+    });
     world.stars.material.opacity = THREE.MathUtils.clamp(night * 1.4 - 0.4, 0, 1);
     world.sunSprite.visible = dayF > 0.05;
     world.sunSprite.position.set(3 - Math.cos(az) * 60, 8 + elev * 30, -70);

@@ -5,6 +5,7 @@ import { OutlineEffect } from '../vendor/OutlineEffect.js';
 import { state, save, bus, tickNeeds, moodScore, NEEDS, levelInfo } from './state.js';
 import { buildWorld, ROOMS, findPath, walkable, clampToRoom, roomAt, labelSprite } from './world.js';
 import { createAvatar } from './avatar.js';
+import { mergeStatic, adaptiveQuality } from './optimize.js';
 import { BOTS } from './ai.js';
 import { initPanels, openPanel, closePanel, currentPanel, hooks, timer, timerText, toast, refresh } from './panels.js';
 
@@ -17,10 +18,10 @@ await Promise.race([document.fonts?.load('600 44px Fredoka').catch(() => {}), ne
 // ---------- renderer, scene, camera ----------
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, touchDevice ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+const tuneQuality = adaptiveQuality(renderer, { min: 1, max: 2 });
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = touchDevice ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 1.0;
 $('#stage').appendChild(renderer.domElement);
@@ -41,8 +42,13 @@ controls.maxPolarAngle = 1.3;
 controls.rotateSpeed = 0.7;
 controls.zoomSpeed = 0.8;
 controls.target.set(0.5, 0.8, 5);
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
 const world = buildWorld(scene, BOTS);
+world.lowPower = touchDevice;
+if (touchDevice) world.sun.shadow.mapSize.set(1024, 1024);
+const merged = mergeStatic(scene);
+console.info(`My Pet House: combined ${merged.before} still pieces into ${merged.after}`);
 world.setWallMode(state.walls);
 world.setOwned(state.owned);
 
@@ -193,13 +199,47 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
+// on-screen joystick for phones and iPads
+const joy = { active: false, x: 0, y: 0, id: null };
+const joyEl = $('#joystick'), stickEl = joyEl.querySelector('.stick');
+joyEl.hidden = !touchDevice;
+function moveJoy(e) {
+  const r = joyEl.getBoundingClientRect(), R = r.width / 2, max = R * 0.62;
+  let dx = e.clientX - (r.left + R), dy = e.clientY - (r.top + R);
+  const len = Math.hypot(dx, dy);
+  if (len > max) { dx *= max / len; dy *= max / len; }
+  stickEl.style.transform = `translate(${dx}px, ${dy}px)`;
+  joy.x = dx / max; joy.y = dy / max;
+}
+joyEl.addEventListener('pointerdown', e => {
+  joy.active = true; joy.id = e.pointerId;
+  joyEl.setPointerCapture(e.pointerId);
+  joyEl.classList.add('on');
+  moveJoy(e);
+});
+joyEl.addEventListener('pointermove', e => { if (joy.active && e.pointerId === joy.id) moveJoy(e); });
+const endJoy = e => {
+  if (e.pointerId !== joy.id) return;
+  joy.active = false; joy.x = joy.y = 0;
+  stickEl.style.transform = '';
+  joyEl.classList.remove('on');
+};
+joyEl.addEventListener('pointerup', endJoy);
+joyEl.addEventListener('pointercancel', endJoy);
+
 function keyboardMove(dt) {
   let fx = 0, fz = 0;
   if (keys.has('w') || keys.has('arrowup')) fz += 1;
   if (keys.has('s') || keys.has('arrowdown')) fz -= 1;
   if (keys.has('a') || keys.has('arrowleft')) fx -= 1;
   if (keys.has('d') || keys.has('arrowright')) fx += 1;
-  if (!fx && !fz) return false;
+  let run = keys.has('shift'), push = 1;
+  if (joy.active) {
+    fx += joy.x; fz -= joy.y;
+    push = Math.min(1, Math.hypot(joy.x, joy.y));
+    run = push > 0.95;
+  }
+  if (Math.hypot(fx, fz) < 0.15) return false;
   if (me.tween) return true;
   if (me.seated || currentPanel()) { closePanel(); standUp(); return true; }
   me.path = []; me.target = null;
@@ -209,7 +249,7 @@ function keyboardMove(dt) {
   fwd.y = 0; fwd.normalize();
   const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
   const dir = fwd.multiplyScalar(fz).add(right.multiplyScalar(fx)).normalize();
-  steer(dt, Math.atan2(dir.x, dir.z), keys.has('shift') ? RUN : WALK);
+  steer(dt, Math.atan2(dir.x, dir.z), run ? RUN : WALK * Math.max(0.35, push));
   const p = avatar.root.position, step = me.speed * dt;
   const nx = p.x + Math.sin(me.heading) * step, nz = p.z + Math.cos(me.heading) * step;
   if (walkable(nx, nz)) { p.x = nx; p.z = nz; }
@@ -237,11 +277,40 @@ function pick(clientX, clientY) {
   return {};
 }
 
-let down = null;
+let down = null, pressTimer = null, tipTimer = null;
 const canvas = renderer.domElement;
-canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+function showTip(item, x, y) {
+  const tip = $('#hoverTip');
+  tip.textContent = `${item.emoji} ${item.name}`;
+  tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, Math.max(8, x - tip.offsetWidth / 2)) + 'px';
+  tip.style.top = Math.max(8, y - 64) + 'px';
+  tip.style.opacity = 1;
+  const o = item.object.position;
+  hoverRing.position.set(o.x, 0.04, o.z);
+  hoverRing.visible = true;
+}
+canvas.addEventListener('pointerdown', e => {
+  down = { x: e.clientX, y: e.clientY, t: performance.now(), long: false };
+  clearTimeout(pressTimer);
+  if (e.pointerType === 'touch') {
+    pressTimer = setTimeout(() => {
+      if (!down) return;
+      const { item } = pick(down.x, down.y);
+      if (!item) return;
+      down.long = true;
+      showTip(item, down.x, down.y);
+      navigator.vibrate?.(10);
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => { $('#hoverTip').style.opacity = 0; hoverRing.visible = false; }, 1800);
+    }, 450);
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 12) clearTimeout(pressTimer);
+});
 canvas.addEventListener('pointerup', e => {
-  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > (e.pointerType === 'touch' ? 12 : 6)) { down = null; return; }
+  clearTimeout(pressTimer);
+  if (!down || down.long || Math.hypot(e.clientX - down.x, e.clientY - down.y) > (e.pointerType === 'touch' ? 12 : 6)) { down = null; return; }
   down = null;
   const hit = pick(e.clientX, e.clientY);
   if (hit.item) goTo(hit.item);
@@ -420,6 +489,7 @@ function loop() {
   if (accTime > 20) { accTime = 0; applyTime(); }
   if (accSave > 30) { accSave = 0; save(); }
 
+  tuneQuality(dt);
   outline.render(scene, camera);
   requestAnimationFrame(loop);
 }
@@ -447,5 +517,40 @@ document.addEventListener('mousemove', e => {
   tip.style.top = e.clientY - 40 + 'px';
   tip.style.opacity = 1;
 });
+
+// home-screen app: offline support and an install hint
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installPrompt = e;
+  showInstallHint(true);
+});
+function showInstallHint(canPrompt) {
+  if (state.installHintSeen) return;
+  const el = $('#installHint');
+  el.querySelector('.install-text').innerHTML = canPrompt
+    ? 'Install <b>My Pet House</b> as an app on this device?'
+    : 'Make this an app: tap <b>Share</b> <span aria-hidden="true">⬆️</span> then <b>Add to Home Screen</b>';
+  el.querySelector('[data-install]').hidden = !canPrompt;
+  el.hidden = false;
+}
+$('#installHint').addEventListener('click', async e => {
+  if (e.target.closest('[data-install]') && installPrompt) {
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => {});
+    installPrompt = null;
+  }
+  if (e.target.closest('[data-install], [data-dismiss]')) {
+    $('#installHint').hidden = true;
+    state.installHintSeen = true;
+    save();
+  }
+});
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (iOS && !standalone && state.welcomed) setTimeout(() => showInstallHint(false), 4000);
 
 window.__petHouse = { world, avatar, me, goTo, openPanel, refresh, renderer, scene };

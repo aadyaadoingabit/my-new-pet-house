@@ -372,3 +372,87 @@ button.special { border: 2.5px solid var(--ink) !important; }
 @keyframes bob { 50% { transform: translateY(-8px) rotate(-4deg); } }
 #toast { background: #fff; color: var(--ink); border: 2.5px solid var(--ink); box-shadow: 0 4px 0 var(--ink); border-radius: 16px; }
 #hoverTip { background: #fff; color: var(--ink); border: 2px solid var(--ink); }
+
+/* ---------- phones and iPads (Phase 2) ---------- */
+html, body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, #panelBody p, #panelBody li, .msg { -webkit-user-select: text; user-select: text; }
+#needs { top: calc(12px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); }
+.hud-right { top: calc(12px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); }
+.timer-pill { top: calc(56px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); }
+.hud-room { top: calc(12px + env(safe-area-inset-top)); }
+.hud-bar { bottom: calc(14px + env(safe-area-inset-bottom)); }
+#panel { top: calc(12px + env(safe-area-inset-top)); bottom: calc(12px + env(safe-area-inset-bottom)); right: calc(12px + env(safe-area-inset-right)); }
+
+#joystick {
+  position: fixed; z-index: 12;
+  left: calc(18px + env(safe-area-inset-left)); bottom: calc(96px + env(safe-area-inset-bottom));
+  width: 124px; height: 124px; border-radius: 50%;
+  background: rgba(255, 255, 255, .55); border: 3px solid var(--ink);
+  box-shadow: 0 4px 0 var(--ink); touch-action: none;
+  display: grid; place-items: center;
+}
+#joystick[hidden] { display: none; }
+#joystick .stick {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: #ff5fa2; border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink);
+  transition: transform .12s ease;
+}
+#joystick.on .stick { transition: none; background: #ffd93d; }
+
+.install-hint {
+  position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
+  top: calc(64px + env(safe-area-inset-top));
+  display: flex; align-items: center; gap: 8px;
+  background: #fff; border: 2.5px solid var(--ink); box-shadow: 0 4px 0 var(--ink); border-radius: 16px;
+  padding: 8px 8px 8px 14px; width: max-content; max-width: calc(100vw - 24px); font-size: .9rem;
+}
+.install-hint[hidden] { display: none; }
+
+@media (pointer: coarse) {
+  input, textarea, select { font-size: 16px; } /* stops iOS from zooming into fields */
+  .hud-bar button { min-width: 48px; min-height: 48px; }
+  button { min-height: 40px; }
+  .chip { min-height: 36px; }
+  #needs.collapsed { width: auto; }
+}
+
+@media (max-width: 640px) {
+  #panel {
+    top: auto; left: calc(8px + env(safe-area-inset-left)); right: calc(8px + env(safe-area-inset-right));
+    bottom: calc(8px + env(safe-area-inset-bottom)); height: 64vh;
+  }
+  #panel header { cursor: grab; touch-action: none; position: relative; padding-top: 20px; }
+  #panel header::before {
+    content: ''; position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
+    width: 44px; height: 5px; border-radius: 5px; background: var(--ink); opacity: .35;
+  }
+  .hud-room { top: auto; bottom: calc(86px + env(safe-area-inset-bottom)); }
+  #joystick { width: 108px; height: 108px; bottom: calc(132px + env(safe-area-inset-bottom)); }
+  .hud-right { max-width: calc(100vw - 190px); }
+  .install-hint { top: auto; bottom: calc(86px + env(safe-area-inset-bottom)); }
+}
+
+/* phone held sideways: panel becomes a side sheet */
+@media (max-height: 520px) and (orientation: landscape) {
+  #panel {
+    top: calc(8px + env(safe-area-inset-top)); bottom: calc(8px + env(safe-area-inset-bottom)); left: auto;
+    right: calc(8px + env(safe-area-inset-right)); width: min(380px, 48vw); height: auto;
+    transform: translateX(calc(100% + 24px));
+  }
+  #panel.open { transform: none; }
+  #needs { width: 140px; padding: 6px 8px; }
+  .need { margin: 1px 0; font-size: .8rem; }
+  #joystick { width: 100px; height: 100px; bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .hud-room { display: none; }
+}
+
+[hidden] { display: none !important; }
+#panel.open ~ #installHint, #panel.open ~ #joystick { display: none; }
+@media (max-width: 640px) {
+  #needs { width: 124px; padding: 6px 8px; border-radius: 14px; }
+  .mood-line { font-size: .75rem; margin-bottom: 2px; }
+  .need { margin: 1px 0; gap: 4px; font-size: .78rem; }
+  .need span { width: 16px; }
+  .need-bar { height: 9px; border-width: 1.5px; }
+  .pill { font-size: .75rem; padding: 4px 8px; }
+}

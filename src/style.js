@@ -118,9 +118,13 @@ export function faceTexture({ eyes = 'oval', mouth = 'smile', blush = true, bg =
   return t;
 }
 
+const faceMats = new Map();
 export function facePlane(size, opts) {
-  const m = new THREE.MeshBasicMaterial({ map: faceTexture(opts), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
-  noOutline(m);
+  const tex = faceTexture(opts);
+  if (!faceMats.has(tex)) {
+    faceMats.set(tex, noOutline(new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })));
+  }
+  const m = faceMats.get(tex);
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), m);
   mesh.renderOrder = 2;
   return mesh;

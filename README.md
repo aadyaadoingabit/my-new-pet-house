@@ -44,6 +44,14 @@ python3 -m http.server
 
 Or turn on **GitHub Pages** for this repo (Settings → Pages → deploy from branch) and open the link on any device.
 
+### On iPhone and iPad
+
+1. Open the GitHub Pages link in **Safari**.
+2. Tap **Share**, then **Add to Home Screen**.
+3. Open **Pet House** from your home screen: it runs full screen like a real app, and works offline after the first visit (the AI helpers still need internet).
+
+Touch controls: tap to walk, use the **joystick** (push it all the way to run), drag to turn the camera, pinch to zoom, **long-press** anything to see what it is, and swipe a panel down to close it.
+
 Your data is saved in your browser only. Use **Settings → Download backup** now and then.
 
 ## Files
@@ -52,6 +60,8 @@ Your data is saved in your browser only. Use **Settings → Download backup** no
 - `src/main.js`: camera, controls, walking, game loop
 - `src/world.js`: the house, furniture, garden, lights, shop decor and helper mascots
 - `src/style.js`: the art style (toon materials, kawaii faces, smiling flowers, patterns)
+- `src/optimize.js`: speed-ups for phones (merging still objects, automatic quality)
+- `sw.js`, `manifest.webmanifest`, `icons/`: home-screen app and offline support
 - `src/avatar.js`: your character
 - `src/panels.js`: everything that opens when you use something
 - `src/ai.js`: the AI helpers

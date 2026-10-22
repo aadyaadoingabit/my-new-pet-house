@@ -565,6 +565,9 @@ PANELS.settings = () => ({
     <div class="row"><input id="apiKey" type="password" placeholder="sk-ant-..." value="${esc(state.apiKey)}" autocomplete="off"><button data-act="saveKey">Save key</button></div>
     ${state.apiKey ? '<p class="small">✅ Key saved. <button class="ghost small" data-act="clearKey">Remove key</button></p>' : '<p class="small muted">No key yet: offline mode.</p>'}
 
+    <h3>📲 Put it on your home screen</h3>
+    <p class="small muted">On iPhone or iPad: open this page in Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>. It opens full screen like a real app and works offline after the first visit (the AI helpers still need internet).</p>
+
     <h3>🕒 Time of day</h3>
     <div class="row">${[['real', '🕒 Real time'], ['day', '☀️ Always day'], ['night', '🌙 Always night']].map(([v, l]) => `<button class="${state.timeMode === v ? '' : 'secondary'}" data-act="timeMode" data-v="${v}">${l}</button>`).join('')}</div>
 
@@ -904,6 +907,31 @@ function keepAndRefresh(ids) {
 export function initPanels() {
   const p = panel();
   $('#panelClose').addEventListener('click', closePanel);
+
+  // swipe the panel's header down to close it (phones)
+  const head = p.querySelector('header');
+  let drag = null;
+  head.addEventListener('pointerdown', e => {
+    if (e.target.closest('button') || window.innerWidth > 640) return;
+    drag = { y: e.clientY, dy: 0 };
+    head.setPointerCapture(e.pointerId);
+    p.style.transition = 'none';
+  });
+  head.addEventListener('pointermove', e => {
+    if (!drag) return;
+    drag.dy = Math.max(0, e.clientY - drag.y);
+    p.style.transform = `translateY(${drag.dy}px)`;
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    const close = drag.dy > 90;
+    drag = null;
+    p.style.transition = '';
+    p.style.transform = '';
+    if (close) closePanel();
+  };
+  head.addEventListener('pointerup', endDrag);
+  head.addEventListener('pointercancel', endDrag);
   p.addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
     if (el && ACT[el.dataset.act]) { e.preventDefault(); ACT[el.dataset.act](el); }
