@@ -1,10 +1,15 @@
 # 🏠 My Pet House
 
-A 3D life simulation where **you are the pet**. Walk around your own house, look after your needs, and fill them back up by doing real things in real life. Every room has its own AI helper.
+A cute 3D life simulation where **you are the pet**. Walk around your own house, look after your needs, and fill them back up by doing real things in real life. Every room has its own AI helper.
+
+The look is inspired by Takashi Murakami's superflat art and Sanrio: toon shading with outlines, candy colors, smiling flowers and kawaii faces. All characters and artwork are original.
+
+The full design plan lives in a separate design doc; the app is being built in phases (1: look and movement, 2: phone and iPad, 3: helpers, 4: journal, 5: music room, 6: game room).
 
 ## What's inside
 
-- **A real 3D house** with a bedroom, bathroom, study, kitchen, living room, home gym and garden. Tap to walk, tap furniture to use it, drag to turn the camera.
+- **A cute 3D house** with nine rooms: bedroom, bathroom, study, music room, kitchen, living room, home gym, game room and garden. Tap to walk, tap furniture to use it, drag to turn the camera, hold Shift to run.
+- **Smooth movement:** blended walk and run animations, gentle acceleration, curved turns, easing into chairs and bed, and a gliding camera.
 - **Sims-style needs** (Hunger, Energy, Hygiene, Fun, Social, Calm) that slowly drop over real time. A mood gem floats over your head, and a thought bubble shows what you need most.
 - **Day and night** that follows your real clock. Lamps turn on at night and stars come out.
 - **Design yourself** in the wardrobe: skin, hair style and color, clothes, shoes.
@@ -22,6 +27,7 @@ A 3D life simulation where **you are the pet**. Walk around your own house, look
 | 🌙 Luna | Bedroom | Reads today's journal page and helps you reflect or wind down |
 | 🪞 Mirror Mo | Bathroom | Confidence coach for kinder self-talk |
 | 🌿 Sage | Garden | Calm guide using ideas from CBT and mindfulness, with crisis resources |
+| 🎧 DJ Mochi | Music room | Music guide who introduces new genres (Spotify comes in Phase 5) |
 
 The helpers use Claude. To turn them on, walk to the **mailbox 📬** in the garden and paste an API key from [platform.claude.com](https://platform.claude.com). API use costs a little money per message. The key is stored only in your browser. Without a key, the helpers still give simple offline tips.
 
@@ -44,7 +50,8 @@ Your data is saved in your browser only. Use **Settings → Download backup** no
 
 - `index.html`, `styles.css`: the page and HUD
 - `src/main.js`: camera, controls, walking, game loop
-- `src/world.js`: the house, furniture, garden, lights and shop decor
+- `src/world.js`: the house, furniture, garden, lights, shop decor and helper mascots
+- `src/style.js`: the art style (toon materials, kawaii faces, smiling flowers, patterns)
 - `src/avatar.js`: your character
 - `src/panels.js`: everything that opens when you use something
 - `src/ai.js`: the AI helpers

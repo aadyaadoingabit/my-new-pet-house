@@ -1,6 +1,7 @@
-// My Pet House: a 3D house where you are the pet.
+// My Pet House: a cute 3D house where you are the pet.
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
+import { OutlineEffect } from '../vendor/OutlineEffect.js';
 import { state, save, bus, tickNeeds, moodScore, NEEDS, levelInfo } from './state.js';
 import { buildWorld, ROOMS, findPath, walkable, clampToRoom, roomAt, labelSprite } from './world.js';
 import { createAvatar } from './avatar.js';
@@ -8,30 +9,37 @@ import { BOTS } from './ai.js';
 import { initPanels, openPanel, closePanel, currentPanel, hooks, timer, timerText, toast, refresh } from './panels.js';
 
 const $ = s => document.querySelector(s);
+const touchDevice = matchMedia('(pointer: coarse)').matches;
+
+// Wait (briefly) for the cute font so 3D name tags use it.
+await Promise.race([document.fonts?.load('600 44px Fredoka').catch(() => {}), new Promise(r => setTimeout(r, 1500))]);
 
 // ---------- renderer, scene, camera ----------
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, touchDevice ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
 $('#stage').appendChild(renderer.domElement);
+const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultColor: [0.23, 0.16, 0.25], defaultAlpha: 1 });
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 300);
-camera.position.set(0.5, 11, 14);
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(0.5, 7.6, 14.2);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.dampingFactor = 0.07;
 controls.enablePan = false;
 controls.minDistance = 4;
-controls.maxDistance = 32;
-controls.minPolarAngle = 0.25;
+controls.maxDistance = 30;
+controls.minPolarAngle = 0.3;
 controls.maxPolarAngle = 1.3;
+controls.rotateSpeed = 0.7;
+controls.zoomSpeed = 0.8;
 controls.target.set(0.5, 0.8, 5);
 
 const world = buildWorld(scene, BOTS);
@@ -43,15 +51,17 @@ avatar.root.position.set(0.5, 0, 5.2);
 scene.add(avatar.root);
 
 // destination marker & hover ring
-const marker = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.3, 32), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0 }));
+const marker = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.3, 32), new THREE.MeshBasicMaterial({ color: '#ff5fa2', transparent: true, opacity: 0 }));
 marker.rotation.x = -Math.PI / 2;
+marker.material.userData.outlineParameters = { visible: false };
 scene.add(marker);
-const hoverRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.65, 40), new THREE.MeshBasicMaterial({ color: '#ffd166', transparent: true, opacity: 0.85 }));
+const hoverRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.66, 40), new THREE.MeshBasicMaterial({ color: '#ffd93d', transparent: true, opacity: 0.9 }));
 hoverRing.rotation.x = -Math.PI / 2;
+hoverRing.material.userData.outlineParameters = { visible: false };
 hoverRing.visible = false;
 scene.add(hoverRing);
 
-// thought bubble that shows your most urgent need
+// thought bubble showing your most urgent need
 let bubble = null, bubbleNeed = null;
 function updateBubble() {
   const [k, v] = Object.entries(state.needs).sort((a, b) => a[1] - b[1])[0];
@@ -60,65 +70,67 @@ function updateBubble() {
   bubbleNeed = want;
   if (bubble) { avatar.root.remove(bubble); bubble.material.map.dispose(); bubble = null; }
   if (want) {
-    bubble = labelSprite(`💭 ${NEEDS[want].icon}`, { bg: 'rgba(255,255,255,.95)', fg: '#222', scale: 1.1 });
-    bubble.position.set(0.45, 2.45, 0);
+    bubble = labelSprite(`💭 ${NEEDS[want].icon}`, { scale: 1.1 });
+    bubble.position.set(0.5, 2.5, 0);
     avatar.root.add(bubble);
   }
 }
 
-// ---------- moving around ----------
+// ---------- moving around (smooth acceleration, curved turns, gentle sitting) ----------
 
-const me = { path: [], target: null, seated: null, speed: 3.4 };
+const WALK = 2.3, RUN = 3.7, ACCEL = 7, DECEL = 6;
+const me = { path: [], target: null, seated: null, speed: 0, heading: 0, turnRate: 0, tween: null, speedMul: 1 };
 
-function standUp() {
-  if (!me.seated) return;
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+const ease = x => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+
+function startTween(to, toYaw, dur, onDone) {
+  const p = avatar.root.position;
+  me.tween = { from: p.clone(), to: new THREE.Vector3(to.x, to.y, to.z), fromYaw: me.heading, toYaw, t: 0, dur, onDone };
+}
+
+function standUp(then) {
+  if (!me.seated) { then?.(); return; }
   const [ax, az] = me.seated.approach;
-  avatar.root.position.set(ax, 0, az);
-  avatar.setPose('idle');
   me.seated = null;
+  avatar.setPose('idle');
+  startTween({ x: ax, y: 0, z: az }, me.heading, 0.45, then);
 }
 
 function walkTo(x, z, item = null) {
   if (currentPanel()) closePanel();
-  standUp();
-  const p = avatar.root.position;
-  me.path = findPath(p.x, p.z, x, z);
-  me.target = item;
+  const go = () => {
+    const p = avatar.root.position;
+    me.path = findPath(p.x, p.z, x, z);
+    me.target = item;
+  };
+  if (me.seated) standUp(go); else { avatar.setPose('idle'); go(); }
   marker.position.set(x, 0.03, z);
-  marker.material.opacity = item ? 0 : 0.9;
+  marker.material.opacity = item ? 0 : 0.95;
 }
 
-function goTo(item) {
-  const [x, z] = item.approach;
-  walkTo(x, z, item);
-}
-
-function faceTowards(x, z, instant = false) {
-  const p = avatar.root.position;
-  const target = Math.atan2(x - p.x, z - p.z);
-  let d = target - avatar.root.rotation.y;
-  d = Math.atan2(Math.sin(d), Math.cos(d));
-  avatar.root.rotation.y += instant ? d : d * 0.25;
-}
+const goTo = item => walkTo(item.approach[0], item.approach[1], item);
 
 function arrive(item) {
   me.target = null;
+  me.speed = 0;
   if (item.seat) {
     const s = item.seat;
-    avatar.root.position.set(s.x, s.y, s.z);
-    avatar.root.rotation.y = s.ry;
-    avatar.setPose(item.pose === 'stand' ? 'idle' : item.pose);
+    const pose = item.pose === 'stand' ? 'idle' : item.pose;
+    avatar.setPose(pose);
     me.seated = item;
+    startTween(s, s.ry, 0.6, () => openPanel(item.panel));
   } else {
     const f = item.face || [item.object.position.x, item.object.position.z];
-    faceTowards(f[0], f[1], true);
+    const p = avatar.root.position;
+    startTween(p, Math.atan2(f[0] - p.x, f[1] - p.z), 0.3, () => openPanel(item.panel));
   }
-  openPanel(item.panel);
 }
 
 hooks.world = world;
 hooks.avatar = avatar;
-hooks.onClose = () => { standUp(); avatar.setPose('idle'); };
+hooks.onClose = () => { if (me.seated) standUp(); else avatar.setPose('idle'); };
+hooks.onReward = () => { if (!me.seated) avatar.cheer(); };
 hooks.goToBot = id => { const it = world.interactables.find(i => i.bot === id); if (it) goTo(it); };
 hooks.onChange = full => {
   applyTime();
@@ -130,15 +142,53 @@ hooks.onChange = full => {
   updateHUD();
 };
 
+function steer(dt, desiredYaw, targetSpeed) {
+  const diff = wrap(desiredYaw - me.heading);
+  me.turnRate = THREE.MathUtils.clamp(diff * 7, -8, 8);
+  me.heading = wrap(me.heading + me.turnRate * dt);
+  const align = Math.max(0.12, Math.cos(Math.min(Math.abs(diff), Math.PI / 2)));
+  const want = targetSpeed * align;
+  me.speed += THREE.MathUtils.clamp(want - me.speed, -DECEL * dt, ACCEL * dt);
+}
+
+function followPath(dt) {
+  const p = avatar.root.position;
+  const [tx, tz] = me.path[0];
+  const dx = tx - p.x, dz = tz - p.z, dist = Math.hypot(dx, dz);
+  const last = me.path.length === 1;
+  if (!last && dist < 0.45) { me.path.shift(); return; }
+  if (last && dist < 0.05) {
+    p.x = tx; p.z = tz;
+    me.path = [];
+    marker.material.opacity = 0;
+    if (me.target) arrive(me.target);
+    return;
+  }
+  let remaining = dist;
+  for (let i = 1; i < me.path.length; i++) remaining += Math.hypot(me.path[i][0] - me.path[i - 1][0], me.path[i][1] - me.path[i - 1][1]);
+  const cruise = (remaining > 7 ? RUN : WALK) * me.speedMul;
+  const arriveSpeed = Math.sqrt(2 * DECEL * 0.8 * remaining) + 0.15;
+  steer(dt, Math.atan2(dx, dz), Math.min(cruise, arriveSpeed));
+  const step = me.speed * dt;
+  if (last && dist < 0.35) {
+    // final approach: glide straight onto the spot
+    const k = Math.min(1, step / dist);
+    p.x += dx * k; p.z += dz * k;
+  } else {
+    p.x += Math.sin(me.heading) * step;
+    p.z += Math.cos(me.heading) * step;
+  }
+}
+
 // keyboard walking (WASD / arrows)
 const keys = new Set();
 window.addEventListener('keydown', e => {
   if (e.target.closest('input, textarea, select')) return;
   if (e.key === 'Escape') { closePanel(); return; }
   const k = e.key.toLowerCase();
-  if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) {
+  if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
     keys.add(k);
-    e.preventDefault();
+    if (k !== 'shift') e.preventDefault();
   }
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
@@ -150,27 +200,30 @@ function keyboardMove(dt) {
   if (keys.has('a') || keys.has('arrowleft')) fx -= 1;
   if (keys.has('d') || keys.has('arrowright')) fx += 1;
   if (!fx && !fz) return false;
-  if (me.seated || currentPanel()) { closePanel(); standUp(); }
+  if (me.tween) return true;
+  if (me.seated || currentPanel()) { closePanel(); standUp(); return true; }
   me.path = []; me.target = null;
+  marker.material.opacity = 0;
   const fwd = new THREE.Vector3();
   camera.getWorldDirection(fwd);
   fwd.y = 0; fwd.normalize();
   const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
   const dir = fwd.multiplyScalar(fz).add(right.multiplyScalar(fx)).normalize();
+  steer(dt, Math.atan2(dir.x, dir.z), keys.has('shift') ? RUN : WALK);
   const p = avatar.root.position, step = me.speed * dt;
-  const nx = p.x + dir.x * step, nz = p.z + dir.z * step;
+  const nx = p.x + Math.sin(me.heading) * step, nz = p.z + Math.cos(me.heading) * step;
   if (walkable(nx, nz)) { p.x = nx; p.z = nz; }
   else if (walkable(nx, p.z)) p.x = nx;
   else if (walkable(p.x, nz)) p.z = nz;
-  faceTowards(p.x + dir.x, p.z + dir.z);
+  else me.speed *= 0.5;
   return true;
 }
 
 // ---------- clicking & hovering ----------
 
 const raycaster = new THREE.Raycaster();
-const shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
 const ndc = new THREE.Vector2();
+const shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
 function pick(clientX, clientY) {
   ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -186,9 +239,9 @@ function pick(clientX, clientY) {
 
 let down = null;
 const canvas = renderer.domElement;
-canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
 canvas.addEventListener('pointerup', e => {
-  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) { down = null; return; }
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > (e.pointerType === 'touch' ? 12 : 6)) { down = null; return; }
   down = null;
   const hit = pick(e.clientX, e.clientY);
   if (hit.item) goTo(hit.item);
@@ -231,7 +284,7 @@ function updateHUD() {
   $('#needs').innerHTML = `<div class="mood-line"><b>${state.name ? state.name : 'You'}</b> · ${mood}</div>${needsHTML}`;
   const lv = levelInfo();
   $('#coins').textContent = `🪙 ${state.coins}`;
-  $('#level').innerHTML = `⭐ Lv ${lv.level}`;
+  $('#level').textContent = `⭐ Lv ${lv.level}`;
   $('#level').title = `${lv.xp} XP · ${lv.toNext} to next level`;
   avatar.setMoodColor(score);
   updateBubble();
@@ -247,7 +300,8 @@ function updateClock() {
 function applyTime() {
   const d = new Date();
   const hour = state.timeMode === 'day' ? 13 : state.timeMode === 'night' ? 22 : d.getHours() + d.getMinutes() / 60;
-  world.setTime(hour);
+  const dayF = world.setTime(hour);
+  renderer.toneMappingExposure = 0.62 + 0.38 * dayF;
   updateClock();
 }
 
@@ -256,7 +310,7 @@ const goSel = $('#goTo');
 const byRoom = {};
 for (const it of world.interactables) (byRoom[it.room] ||= []).push(it);
 goSel.innerHTML = '<option value="">🚶 Go to…</option>' + Object.entries(ROOMS).filter(([id]) => byRoom[id]).map(([id, r]) =>
-  `<optgroup label="${r.emoji} ${r.name}">${byRoom[id].map(it => `<option value="${it.id}">${it.emoji} ${it.name}</option>`).join('')}</optgroup>`).join('');
+  `<optgroup label="${r.emoji} ${r.name}">${byRoom[id].filter((it, i, a) => a.findIndex(o => o.name === it.name) === i).map(it => `<option value="${it.id}">${it.emoji} ${it.name}</option>`).join('')}</optgroup>`).join('');
 goSel.addEventListener('change', () => {
   const it = world.interactables.find(i => i.id === goSel.value);
   if (it) {
@@ -280,7 +334,6 @@ document.querySelectorAll('[data-hud]').forEach(b => b.addEventListener('click',
 
 bus.addEventListener('change', updateHUD);
 
-// welcome screen for first visit
 if (!state.welcomed) {
   $('#welcome').hidden = false;
   $('#welcomeName').value = state.name;
@@ -289,6 +342,7 @@ if (!state.welcomed) {
     state.welcomed = true;
     save();
     $('#welcome').hidden = true;
+    avatar.cheer();
     toast(`Welcome home${state.name ? ', ' + state.name : ''}! 🏡 Tap something to use it.`);
   });
 }
@@ -298,73 +352,65 @@ initPanels();
 // ---------- loop ----------
 
 const clock = new THREE.Clock();
-let acc = 0, accTime = 0, accSave = 0;
-const camDelta = new THREE.Vector3();
+let acc = 0, accTime = 0, accSave = 0, lastRoom = null;
 const viewShift = [0, 0];
-let lastRoom = null;
+const camGoal = new THREE.Vector3();
+const camDelta = new THREE.Vector3();
 
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
+  const p = avatar.root.position;
 
-  const manual = keyboardMove(dt);
-  let moving = manual;
-  if (!manual && me.path.length) {
-    const p = avatar.root.position;
-    const [tx, tz] = me.path[0];
-    const dx = tx - p.x, dz = tz - p.z, dist = Math.hypot(dx, dz), step = me.speed * dt;
-    if (dist <= step) {
-      p.x = tx; p.z = tz;
-      me.path.shift();
-      if (!me.path.length) { marker.material.opacity = 0; if (me.target) arrive(me.target); }
-    } else {
-      p.x += (dx / dist) * step;
-      p.z += (dz / dist) * step;
-      faceTowards(tx, tz);
-      moving = true;
-    }
+  if (me.tween) {
+    const tw = me.tween;
+    tw.t += dt;
+    const k = ease(Math.min(1, tw.t / tw.dur));
+    p.lerpVectors(tw.from, tw.to, k);
+    me.heading = tw.fromYaw + wrap(tw.toYaw - tw.fromYaw) * k;
+    me.speed = 0; me.turnRate = 0;
+    if (tw.t >= tw.dur) { me.tween = null; tw.onDone?.(); }
+  } else if (!keyboardMove(dt)) {
+    if (me.path.length) followPath(dt);
+    else { me.speed = Math.max(0, me.speed - DECEL * dt); me.turnRate *= 0.8; }
   }
-  if (marker.material.opacity > 0) marker.scale.setScalar(1 + Math.sin(t * 6) * 0.1);
+  avatar.root.rotation.y = me.heading;
+  if (marker.material.opacity > 0) marker.scale.setScalar(1 + Math.sin(t * 6) * 0.12);
 
-  avatar.update(dt, t, moving, false);
-  world.update(t);
+  avatar.update(dt, t, me.speed, me.turnRate);
+  world.update(t, dt);
 
-  // bots turn to look at you when you're close
-  const ap = avatar.root.position;
+  // helpers turn to look at you when you're close
   for (const id in world.bots) {
-    const b = world.bots[id];
-    const bp = b.group.position;
-    if (Math.hypot(ap.x - bp.x, ap.z - bp.z) < 4) {
-      const target = Math.atan2(ap.x - bp.x, ap.z - bp.z);
-      let d = target - b.hover.rotation.y;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
+    const b = world.bots[id], bp = b.group.position;
+    if (Math.hypot(p.x - bp.x, p.z - bp.z) < 4) {
+      const d = wrap(Math.atan2(p.x - bp.x, p.z - bp.z) - b.hover.rotation.y);
       b.hover.rotation.y += d * Math.min(1, dt * 4);
     }
   }
 
-  // TV flicker and study monitor glow
-  if (currentPanel() === 'tv') world.tvMat.emissiveIntensity = 0.8 + Math.sin(t * 7) * 0.15 + Math.sin(t * 13) * 0.1;
-  world.monitorMat.emissiveIntensity = timer.running ? 1.2 : 0.5;
+  if (currentPanel() === 'tv') world.tvMat.color.setHSL((t * 0.1) % 1, 0.6, 0.7 + Math.sin(t * 9) * 0.05);
+  else world.tvMat.color.set('#3a3346');
+  world.monitorMat.color.set(timer.running ? '#ffd93d' : '#7fd4ff');
 
-  // camera follows you
-  camDelta.set(ap.x, 0.8 + ap.y * 0.5, ap.z).sub(controls.target).multiplyScalar(Math.min(1, dt * 4));
+  // camera glides after you, looking slightly ahead
+  camGoal.set(p.x + Math.sin(me.heading) * me.speed * 0.35, 0.8 + p.y * 0.4, p.z + Math.cos(me.heading) * me.speed * 0.35);
+  camDelta.copy(camGoal).sub(controls.target).multiplyScalar(1 - Math.exp(-dt * 4));
   controls.target.add(camDelta);
   camera.position.add(camDelta);
   controls.update();
 
   // keep your character visible next to an open panel
-  const panelOpen = !!currentPanel(), mobile = window.innerWidth <= 640;
-  const want = panelOpen ? (mobile ? [0, window.innerHeight * 0.3] : [Math.min(420, window.innerWidth - 24) / 2, 0]) : [0, 0];
+  const mobile = window.innerWidth <= 640;
+  const want = currentPanel() ? (mobile ? [0, window.innerHeight * 0.3] : [Math.min(420, window.innerWidth - 24) / 2, 0]) : [0, 0];
   viewShift[0] += (want[0] - viewShift[0]) * Math.min(1, dt * 6);
   viewShift[1] += (want[1] - viewShift[1]) * Math.min(1, dt * 6);
   if (Math.abs(viewShift[0]) + Math.abs(viewShift[1]) > 0.5) camera.setViewOffset(window.innerWidth, window.innerHeight, viewShift[0], viewShift[1], window.innerWidth, window.innerHeight);
   else if (camera.view?.enabled) camera.clearViewOffset();
 
-  // room name
-  const room = roomAt(ap.x, ap.z);
+  const room = roomAt(p.x, p.z);
   if (room !== lastRoom) { lastRoom = room; $('#roomName').textContent = room ? `${ROOMS[room].emoji} ${ROOMS[room].name}` : ''; }
 
-  // timer pill
   const pill = $('#timerPill');
   pill.hidden = !timer.running;
   if (timer.running) pill.textContent = `⏱ ${timerText()} · ${timer.skill}`;
@@ -374,7 +420,7 @@ function loop() {
   if (accTime > 20) { accTime = 0; applyTime(); }
   if (accSave > 30) { accSave = 0; save(); }
 
-  renderer.render(scene, camera);
+  outline.render(scene, camera);
   requestAnimationFrame(loop);
 }
 
@@ -402,4 +448,4 @@ document.addEventListener('mousemove', e => {
   tip.style.opacity = 1;
 });
 
-window.__petHouse = { world, avatar, me, goTo, openPanel, refresh };
+window.__petHouse = { world, avatar, me, goTo, openPanel, refresh, renderer, scene };

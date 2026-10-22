@@ -26,6 +26,7 @@ function reward(key, coins, limit, needs, msg) {
   boost(needs);
   save();
   toast(msg + (got ? `  +${got} 🪙` : ''));
+  if (got) hooks.onReward?.();
 }
 
 const dailyPick = (list, salt = 0) => {
@@ -54,7 +55,6 @@ export const currentPanel = () => current;
 
 function cleanup(id) {
   if (id === 'calm') stopBreathing();
-  if (id === 'tv' && hooks.world) hooks.world.tvMat.emissive.set('#000000');
 }
 
 export function refresh() { if (current) render(false); }
@@ -359,7 +359,6 @@ PANELS.tv = () => ({
   title: '📺 Fun time',
   html: `<p class="muted">Rest and play matter too! Log something fun you did in real life.</p>
     ${logForm('fun', ['🎮 Played a game', '📺 Watched a show', '🎨 Made art', '🎵 Listened to music', '🌳 Went outside', '📖 Read for fun'], 'Something else fun...')}${needTag('fun')}`,
-  after: () => hooks.world?.tvMat.emissive.set('#5b8cff'),
 });
 PANELS.phone = () => ({
   title: '📱 Phone',
@@ -470,6 +469,27 @@ PANELS.gratitude = () => {
 PANELS.cat = () => ({
   title: '🐈 Your cat',
   html: `<p>Your cat blinks slowly at you. That means "I love you" in cat.</p><div class="row"><button data-act="petCat">🤚 Pet the cat</button></div>${needTag('fun', 'calm')}`,
+});
+
+// 🎵 Music room and 🎮 game room (full features arrive in later phases)
+PANELS.music = () => ({
+  title: '🎵 Music room',
+  html: `
+    <div class="note big-quote">Your vinyl collection is almost ready! 💿</div>
+    <p>Soon you'll connect Spotify here. Your albums and playlists will become records on the shelf, and the turntable will play them through your Spotify app.</p>
+    <p class="small muted">Coming in Phase 5 of the build plan.</p>
+    ${helperBtn('mochi', 'Chat with DJ Mochi about music')}`,
+});
+PANELS.arcade = () => ({
+  title: '🕹️ Arcade',
+  html: `
+    <p>Insert coin... 🪙 The games are being built!</p>
+    <ul class="list">${['❌⭕ XOXO', '🧱 Block builder', '🌼 Flower memory', '🐛 Caterpillar', '🐱 Merge kittens', '🔤 Word garden'].map(g => `<li><span>${g}</span><span class="small muted">soon</span></li>`).join('')}</ul>
+    <p class="small muted">Coming in Phase 6 of the build plan.</p>`,
+});
+PANELS.claw = () => ({
+  title: '🧸 Claw machine',
+  html: `<p>The plushies are waiting for you! Soon you'll be able to win them and put them around your house.</p><p class="small muted">Coming in Phase 6 of the build plan.</p>`,
 });
 
 // 🛒 Shop
