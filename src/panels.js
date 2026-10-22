@@ -3,8 +3,9 @@ import {
   state, save, replaceState, uid, today, lastNDays, niceDate, shortDay, esc, sum, clamp,
   earn, boost, levelInfo, habitsDone, focusMinutes, workoutMinutes, avgMood, journalHasContent, streak, NEEDS,
 } from './state.js';
-import { BOT, BOTS, chat, special, hasKey, renameBot, memoryOf, canShare, updateMemory, weeklyCheckIn, todaysPromise } from './ai.js';
+import { BOT, BOTS, chat, special, hasKey, aiMode, aiLabel, renameBot, memoryOf, canShare, updateMemory, weeklyCheckIn, todaysPromise } from './ai.js';
 import { weightTrend } from './patterns.js';
+import { LOCAL_MODELS, webgpuInfo, load as loadLocal, remove as removeLocal, isDownloaded, isReady as localLoaded } from './localai.js';
 import { SHOP_ITEMS } from './world.js';
 import { LOOKS } from './avatar.js';
 
@@ -608,18 +609,31 @@ function barChart(points, { unit = '', max, decimals = 0 } = {}) {
 PANELS.settings = () => ({
   title: '📬 Mailbox · settings',
   html: `
-    <h3>🤖 AI helpers (Claude)</h3>
-    <p class="small muted">The room helpers use Claude. Paste an API key from <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a> to turn them on.
-      API use costs a little money per message, billed to that account, so ask a parent or guardian if it isn't your account.
-      The key is saved only in this browser and sent only to Anthropic. Without a key, the helpers run in a simple offline mode.</p>
-    <div class="row"><input id="apiKey" type="password" placeholder="sk-ant-..." value="${esc(state.apiKey)}" autocomplete="off"><button data-act="saveKey">Save key</button></div>
-    ${state.apiKey ? '<p class="small">✅ Key saved. <button class="ghost small" data-act="clearKey">Remove key</button></p>' : '<p class="small muted">No key yet: offline mode.</p>'}
+    <h3>🤖 AI brain</h3>
+    <p class="small muted">Choose what powers your helpers. Right now: <b>${aiLabel()}</b>.</p>
+    <div class="ai-choice ${(state.aiProvider ?? 'local') === 'local' ? 'on' : ''}">
+      <b>🌸 Free on-iPad AI</b>
+      <p class="small">Free forever and private: runs on your iPad, so your chats never leave it. Needs iPadOS 26 or newer. A bit slower and less clever than Claude.</p>
+      <div class="row">${Object.entries(LOCAL_MODELS).map(([k, m]) => `<label class="chip ${(state.localSize || 'quick') === k ? 'on' : ''}"><input type="radio" name="localSize" value="${k}" ${(state.localSize || 'quick') === k ? 'checked' : ''} hidden>${m.name} · ${m.size}</label>`).join('')}</div>
+      <p class="small muted">${LOCAL_MODELS[state.localSize || 'quick'].note}. One-time download, use Wi-Fi.</p>
+      ${aiUI.downloading ? `<div class="bar" style="height:12px"><i id="aiBar" style="width:${Math.round(aiUI.progress * 100)}%"></i></div><p class="small" id="aiText">${esc(aiUI.text)}</p>`
+        : state.localReady ? `<p class="small">✅ Downloaded and ready. <button class="ghost small" data-act="useLocal">Use this</button><button class="ghost small" data-act="removeLocal">Delete download</button></p>`
+        : `<button data-act="downloadLocal">⬇️ Download free AI</button>`}
+      ${aiUI.error ? `<p class="small" style="color:#c0392b">${esc(aiUI.error)}</p>` : ''}
+    </div>
+    <div class="ai-choice ${state.aiProvider === 'claude' ? 'on' : ''}">
+      <b>✨ Claude (paid, smartest)</b>
+      <p class="small">Needs an API key from <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a>; each message costs a little money. Adds web search for Owl.</p>
+      <div class="row"><input id="apiKey" type="password" placeholder="sk-ant-..." value="${esc(state.apiKey)}" autocomplete="off"><button data-act="saveKey">Use Claude</button></div>
+      ${state.apiKey ? '<p class="small">Key saved. <button class="ghost small" data-act="clearKey">Remove key</button></p>' : ''}
+    </div>
+    <p class="small muted">No AI chosen? Helpers still work in offline mode with built-in tips.</p>
 
     <h3>🧠 Your helpers</h3>
     <button class="secondary" data-act="openP" data-p="helpers">See what your helpers remember</button>
 
     <h3>📲 Put it on your home screen</h3>
-    <p class="small muted">On iPhone or iPad: open this page in Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>. It opens full screen like a real app and works offline after the first visit (the AI helpers still need internet).</p>
+    <p class="small muted">On iPhone or iPad: open this page in Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>. It opens full screen like a real app and works offline after the first visit. The free on-iPad AI works offline too; Claude needs internet.</p>
 
     <h3>🕒 Time of day</h3>
     <div class="row">${[['real', '🕒 Real time'], ['day', '☀️ Always day'], ['night', '🌙 Always night']].map(([v, l]) => `<button class="${state.timeMode === v ? '' : 'secondary'}" data-act="timeMode" data-v="${v}">${l}</button>`).join('')}</div>
@@ -635,6 +649,9 @@ PANELS.settings = () => ({
       <button class="ghost" data-act="reset">Reset everything</button>
     </div>`,
 });
+
+// AI brain download state (Settings)
+const aiUI = { downloading: false, progress: 0, text: '', error: '' };
 
 // 🤖 AI chat
 const chatUI = { busy: false, specialHTML: '', asking: null, renaming: false, weeklyTried: {} };
@@ -663,7 +680,7 @@ PANELS.chat = botId => {
           ${chatUI.renaming
             ? `<div class="row"><input id="renameIn" value="${esc(b.name)}" maxlength="24" aria-label="New name for ${esc(b.name)}"><button class="small" data-act="saveRename">Save</button></div>`
             : `<b>${esc(b.name)}</b> <button class="ghost small" data-act="rename" aria-label="Rename ${esc(b.name)}">✏️ Rename</button>`}
-          <div class="small muted">${b.role} · ${hasKey() ? 'powered by Claude' : 'offline mode'} · remembers ${n} thing${n === 1 ? '' : 's'}</div>
+          <div class="small muted">${b.role} · ${aiLabel()} · remembers ${n} thing${n === 1 ? '' : 's'}</div>
         </div>
       </div>
       ${mem.weekly ? `<div class="weekly"><b>🗓️ Weekly check-in</b><p>${md(mem.weekly.text)}</p></div>` : ''}
@@ -672,6 +689,7 @@ PANELS.chat = botId => {
         <div class="msg bot">${md(b.intro(b.name))}</div>
         ${hist.map(m => `<div class="msg ${m.role === 'user' ? 'me' : 'bot'}">${md(m.content)}</div>`).join('')}
       </div>
+      ${chatUI.crisis === botId ? `<div class="msg bot crisis-msg"><b>💛 I'm really glad you told me.</b> You deserve real support right now. Please reach out: call or text <b>988</b> (US), <b>116 123</b> (UK), <b>14416</b> (India), or find a free line at <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>. If you're in danger, call your local emergency number. You can also tell someone you trust.</div>` : ''}
       <div id="specialOut">${chatUI.specialHTML}</div>
       <div class="chips">${b.quick.map(q => `<button class="chip" data-act="ask" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
       <div class="specials">${b.specials.map((sp, i) => `<button class="special" data-act="special" data-i="${i}" style="--bot:${b.color}" ${chatUI.busy ? 'disabled' : ''}>${sp.label}</button>`).join('')}</div>
@@ -695,11 +713,15 @@ PANELS.chat = botId => {
   };
 };
 
+const CRISIS_WORDS = /\b(suicid\w*|kill (my ?self|me)|end (my|it all)|want(ed)? to die|don'?t want to (live|be here)|self[- ]?harm|hurt(ing)? my ?self|cut(ting)? my ?self|overdose)\b/i;
+
 async function sendChat(text) {
   const botId = current.split(':')[1];
   if (!text.trim() || chatUI.busy) return;
+  if (CRISIS_WORDS.test(text)) chatUI.crisis = botId;
   chatUI.busy = true;
   chatUI.specialHTML = '';
+  if (aiMode() === 'local' && !localLoaded()) toast('🧠 Waking up your on-iPad AI… the first reply takes a moment');
   refresh();
   const msgs = $('#msgs');
   msgs.insertAdjacentHTML('beforeend', `<div class="msg me">${md(text)}</div><div class="msg bot typing" id="streaming">…</div>`);
@@ -1178,8 +1200,42 @@ const ACT = {
   },
   range: el => { range = Number(el.dataset.n); refresh(); },
 
-  saveKey: () => { state.apiKey = $('#apiKey').value.trim(); save(); toast(state.apiKey ? '🤖 AI helpers are awake!' : 'Key removed'); refresh(); },
-  clearKey: () => { state.apiKey = ''; save(); refresh(); },
+  saveKey: () => {
+    state.apiKey = $('#apiKey').value.trim();
+    if (state.apiKey) state.aiProvider = 'claude';
+    save(); toast(state.apiKey ? '✨ Helpers now use Claude' : 'Key removed'); refresh();
+  },
+  clearKey: () => { state.apiKey = ''; if (state.aiProvider === 'claude') state.aiProvider = 'local'; save(); refresh(); },
+  useLocal: () => { state.aiProvider = 'local'; save(); toast('🌸 Helpers now use the free on-iPad AI'); refresh(); },
+  downloadLocal: async () => {
+    aiUI.error = '';
+    const gpu = await webgpuInfo();
+    if (!gpu.ok) { aiUI.error = gpu.why; refresh(); return; }
+    aiUI.downloading = true; aiUI.progress = 0; aiUI.text = 'Starting download…';
+    refresh();
+    try {
+      await loadLocal(state.localSize || 'quick', ({ progress, text }) => {
+        aiUI.progress = progress; aiUI.text = text;
+        const bar = document.getElementById('aiBar'), t = document.getElementById('aiText');
+        if (bar) bar.style.width = Math.round(progress * 100) + '%';
+        if (t) t.textContent = text;
+      });
+      state.localReady = true;
+      state.aiProvider = 'local';
+      save();
+      toast('🌸 Your free AI is ready! Go say hi to a helper.');
+    } catch (e) {
+      aiUI.error = 'Download failed: ' + (e?.message || e) + '. Check your Wi-Fi and try again, or pick the Quick AI.';
+    }
+    aiUI.downloading = false;
+    refresh();
+  },
+  removeLocal: async () => {
+    if (!confirm('Delete the downloaded AI from this iPad? You can download it again later.')) return;
+    try { await removeLocal(state.localSize || 'quick'); } catch (e) { /* already gone */ }
+    state.localReady = false;
+    save(); refresh();
+  },
   timeMode: el => { state.timeMode = el.dataset.v; save(); hooks.onChange(); refresh(); },
   walls: el => { state.walls = el.dataset.v; save(); hooks.world?.setWallMode(state.walls); refresh(); },
   export: () => {
@@ -1290,6 +1346,11 @@ export function initPanels() {
     if (e.target.id === 'skillSel') timer.skill = e.target.value;
     if (e.target.id === 'buddyIn') studyBuddy = e.target.checked;
     if (e.target.id === 'unitIn') { state.weightUnit = e.target.value; save(); refresh(); }
+    if (e.target.name === 'localSize') {
+      state.localSize = e.target.value;
+      save(); refresh();
+      isDownloaded(state.localSize).then(v => { state.localReady = v; save(); refresh(); });
+    }
     if (e.target.dataset.step != null) {
       const st = state.focusSteps[Number(e.target.dataset.step)];
       if (st) { st.done = e.target.checked; if (st.done) toast('✅ Tiny step done!'); save(); refresh(); }

@@ -35,7 +35,13 @@ Every helper:
 - **Works as a team**: helpers can share useful notes with each other (you can switch this off per helper).
 - **Notices patterns** in your own logs and gives a weekly "This week I noticed..." check-in. Observations, never diagnoses.
 
-The helpers use Claude. To turn them on, walk to the **mailbox 📬** in the garden and paste an API key from [platform.claude.com](https://platform.claude.com). API use costs a little money per message. The key is stored only in your browser. Without a key, the helpers still give simple offline tips.
+### What powers the helpers (Settings → mailbox 📬)
+
+- **🌸 Free on-iPad AI (default):** runs completely on your iPad with [WebLLM](https://github.com/mlc-ai/web-llm) and Meta's open Llama 3.2 models. Free, private (chats never leave the device) and works offline. One-time download: *Quick* (about 0.9 GB) or *Smarter* (about 2.3 GB, best on M1 iPads or newer). Needs iPadOS 26 or newer (WebGPU).
+- **✨ Claude (optional, paid):** the smartest option, plus web search for Owl. Paste an API key from [platform.claude.com](https://platform.claude.com); each message costs a little.
+- **Offline mode:** with neither, helpers give built-in tips, tiny steps and pattern check-ins.
+
+Whatever powers them, if you write something that sounds like a crisis, the app always shows helpline numbers.
 
 > The Calm Garden and Sage are for everyday self-care, not a replacement for a therapist. If you're struggling, please reach out to someone you trust or a helpline ([findahelpline.com](https://findahelpline.com)).
 

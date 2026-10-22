@@ -3,6 +3,7 @@
 import Anthropic from '../vendor/anthropic-sdk.js';
 import { state, save, uid, today, lastNDays, habitsDone, streak, workoutMinutes, sum, NEEDS } from './state.js';
 import { patternsFor, weightTrend } from './patterns.js';
+import * as local from './localai.js';
 
 const MODEL = 'claude-opus-5-5';
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
@@ -216,9 +217,40 @@ function system(bot) {
     `Right now: name ${state.name || 'unknown'}; needs ${needsLine()}.\n${bot.context()}`;
 }
 
+// ---------- which AI brain? ----------
+
+// 'claude' (paid, smartest), 'local' (free, runs on this iPad) or 'offline' (built-in tips only)
+export function aiMode() {
+  const provider = state.aiProvider ?? (state.apiKey ? 'claude' : 'local');
+  if (provider === 'claude' && state.apiKey) return 'claude';
+  if (provider === 'local' && state.localReady) return 'local';
+  return 'offline';
+}
+export const hasKey = () => aiMode() !== 'offline';
+export const aiLabel = () => ({ claude: 'powered by Claude', local: 'free on-iPad AI', offline: 'offline mode' })[aiMode()];
+
+// A shorter brief for the small on-device model (it has a small memory).
+function compactSystem(bot) {
+  const mem = memoryOf(bot.id).notes.slice(0, 6);
+  const pats = patternsFor(bot.id).slice(0, 4);
+  return `You are ${bot.name}, a ${bot.role.toLowerCase()} in a cute self-care app called My Pet House. The user is a 21-year-old adult. ` +
+    `Be warm and kind. Reply in under 90 words, plain language, one question at a time. You are not a doctor or therapist. ${CRISIS}\n\n` +
+    `${bot.persona}\n\n` +
+    (mem.length ? `You remember: ${mem.map(n => n.text).join(' | ')}\n` : '') +
+    (pats.length ? `Patterns in their logs: ${pats.join(' ')}\n` : '') +
+    `Now: ${bot.context()}`;
+}
+const clip = (t, n = 600) => (t.length > n ? t.slice(0, n) + '…' : t);
+const localSize = () => state.localSize || 'quick';
+
+function localError(e) {
+  const m = String(e?.message || e);
+  if (/memory|OOM|allocate|device lost|DeviceLost/i.test(m)) return new Error('Your iPad ran out of memory for the AI. Close other apps or switch to the Quick AI in Settings.');
+  return new Error('The on-iPad AI had a problem: ' + m);
+}
+
 // ---------- API ----------
 
-export const hasKey = () => !!state.apiKey;
 const client = () => new Anthropic({ apiKey: state.apiKey, dangerouslyAllowBrowser: true });
 
 function friendlyError(e) {
@@ -232,7 +264,7 @@ function friendlyError(e) {
 
 function offlineReply(bot) {
   const tip = bot.offline[Math.floor(Math.random() * bot.offline.length)];
-  return `${tip}\n\n(I'm in offline mode. Add a Claude API key at the mailbox 📬 in the garden so I can really talk with you.)`;
+  return `${tip}\n\n(I'm in offline mode. Turn on the free on-iPad AI at the mailbox 📬 in the garden so I can really talk with you.)`;
 }
 
 function textOf(content) {
@@ -255,12 +287,27 @@ export async function chat(botId, userText, onText) {
   if (history.length > 40) history.splice(0, history.length - 40);
   while (history.length && history[0].role !== 'user') history.shift();
 
-  if (!hasKey()) {
+  const mode = aiMode();
+  if (mode === 'offline') {
     const text = offlineReply(bot);
     onText(text);
     history.push({ role: 'assistant', content: text });
     save();
     return text;
+  }
+  if (mode === 'local') {
+    try {
+      const msgs = [{ role: 'system', content: compactSystem(bot) }, ...history.slice(-8).map(m => ({ role: m.role, content: clip(m.content) }))];
+      const text = (await local.chatStream(localSize(), msgs, onText)).trim();
+      history.push({ role: 'assistant', content: text });
+      memoryOf(botId).pending = (memoryOf(botId).pending || 0) + 1;
+      save();
+      return text;
+    } catch (e) {
+      history.pop();
+      save();
+      throw localError(e);
+    }
   }
   try {
     let messages = history.map(m => ({ role: m.role, content: m.content }));
@@ -295,6 +342,12 @@ export async function chat(botId, userText, onText) {
 }
 
 async function structured(bot, prompt, schema, sys) {
+  if (aiMode() === 'local') {
+    return local.json(localSize(), [
+      { role: 'system', content: (sys ?? compactSystem(bot)) + '\nAnswer only with JSON that matches the requested format.' },
+      { role: 'user', content: prompt },
+    ], schema);
+  }
   const msg = await client().beta.messages.create({
     model: MODEL,
     max_tokens: 16000,
@@ -339,7 +392,12 @@ export async function weeklyCheckIn(botId, force = false) {
   const pats = patternsFor(botId);
   if (!pats.length) return mem.weekly;
   let text;
-  if (hasKey()) {
+  const ask = 'Write my weekly check-in. Start with "This week I noticed", use the patterns from my logs, keep it to 2 to 4 short sentences, kind and specific, and end with one small suggestion. Observations only, no diagnoses.';
+  if (aiMode() === 'local') {
+    try {
+      text = (await local.chatStream(localSize(), [{ role: 'system', content: compactSystem(BOT[botId]) }, { role: 'user', content: ask }], () => {})).trim();
+    } catch (e) { text = null; }
+  } else if (aiMode() === 'claude') {
     try {
       const msg = await client().beta.messages.create({
         model: MODEL, max_tokens: 16000, system: system(BOT[botId]),
@@ -415,14 +473,18 @@ const SPECIALS = {
 
 export async function special(botId, kind, input) {
   const spec = SPECIALS[kind];
-  if (!hasKey()) {
-    if (!spec.offline) throw new Error('This needs a Claude API key. Add one at the mailbox 📬 in the garden.');
-    const data = typeof spec.offline === 'function' ? spec.offline(input) : spec.offline;
-    return { ...data, offline: true };
+  const fallback = () => ({ ...(typeof spec.offline === 'function' ? spec.offline(input) : spec.offline), offline: true });
+  if (aiMode() === 'offline') {
+    if (!spec.offline) throw new Error('This needs the AI. Turn on the free on-iPad AI at the mailbox 📬 in the garden.');
+    return fallback();
   }
   try {
     return await structured(BOT[botId], spec.prompt(input), spec.schema);
   } catch (e) {
+    if (aiMode() === 'local') {
+      if (spec.offline) return fallback();
+      throw localError(e);
+    }
     throw new Error(e instanceof Anthropic.APIError || e instanceof Anthropic.APIConnectionError ? friendlyError(e) : e.message);
   }
 }
