@@ -1,2 +1,69 @@
-# my-new-pet-house
-I just wanted to make a new app
+# 🏠 My Pet House
+
+A cute 3D life simulation where **you are the pet**. Walk around your own house, look after your needs, and fill them back up by doing real things in real life. Every room has its own AI helper.
+
+The look is inspired by Takashi Murakami's superflat art and Sanrio: toon shading with outlines, candy colors, smiling flowers and kawaii faces. All characters and artwork are original.
+
+The full design plan lives in a separate design doc; the app is being built in phases (1: look and movement, 2: phone and iPad, 3: helpers, 4: journal, 5: music room, 6: game room).
+
+## What's inside
+
+- **A cute 3D house** with nine rooms: bedroom, bathroom, study, music room, kitchen, living room, home gym, game room and garden. Tap to walk, tap furniture to use it, drag to turn the camera, hold Shift to run.
+- **Smooth movement:** blended walk and run animations, gentle acceleration, curved turns, easing into chairs and bed, and a gliding camera.
+- **Sims-style needs** (Hunger, Energy, Hygiene, Fun, Social, Calm) that slowly drop over real time. A mood gem floats over your head, and a thought bubble shows what you need most.
+- **Day and night** that follows your real clock. Lamps turn on at night and stars come out.
+- **Design yourself** in the wardrobe: skin, hair style and color, clothes, shoes.
+- **Coins and a shop.** Earn coins for real self-care (with daily limits, so no cheating!) and buy furniture, an aquarium, a fountain, even a cat.
+- **Everything from before**: habit board with streaks, focus timer, skills, flashcards, meals, water, sleep, workouts, journal, mood check-ins, box breathing, grounding, thought reframing, gratitude and progress charts.
+
+## The AI helpers
+
+| Helper | Room | What they do differently |
+|---|---|---|
+| 🌞 Sunny | Living room | Habit coach. Sees your habits and streaks and can suggest new habits you add with one tap |
+| 🦉 Professor Owl | Study | Tutor. Explains topics, quizzes you and **makes flashcards** that land on your bookshelf |
+| 🧑‍🍳 Chef Basil | Kitchen | Sees what you ate today and plans easy meals |
+| 🦖 Coach Rex | Home gym | Builds a workout for your energy level that you can log when done |
+| 🌙 Luna | Bedroom | Reads today's journal page and helps you reflect or wind down |
+| 🪞 Mirror Mo | Bathroom | Confidence coach for kinder self-talk |
+| 🌿 Sage | Garden | Calm guide using ideas from CBT and mindfulness, with crisis resources |
+| 🎧 DJ Mochi | Music room | Music guide who introduces new genres (Spotify comes in Phase 5) |
+
+The helpers use Claude. To turn them on, walk to the **mailbox 📬** in the garden and paste an API key from [platform.claude.com](https://platform.claude.com). API use costs a little money per message. The key is stored only in your browser. Without a key, the helpers still give simple offline tips.
+
+> The Calm Garden and Sage are for everyday self-care, not a replacement for a therapist. If you're struggling, please reach out to someone you trust or a helpline ([findahelpline.com](https://findahelpline.com)).
+
+## How to open it
+
+The app uses JavaScript modules, so it has to be opened through a web server (double-clicking `index.html` won't work):
+
+```bash
+python3 -m http.server
+# then open http://localhost:8000
+```
+
+Or turn on **GitHub Pages** for this repo (Settings → Pages → deploy from branch) and open the link on any device.
+
+### On iPad (the main device) and iPhone
+
+1. Open the GitHub Pages link in **Safari**.
+2. Tap **Share**, then **Add to Home Screen**.
+3. Open **Pet House** from your home screen and hold your iPad **sideways** (the house plays in landscape): it runs full screen like a real app, and works offline after the first visit (the AI helpers still need internet).
+
+Touch controls: tap to walk, use the **joystick** (push it all the way to run), drag to turn the camera, pinch to zoom, **long-press** anything to see what it is, and swipe a panel down to close it. In Safari, the **Full screen** button hides the browser bars.
+
+Your data is saved in your browser only. Use **Settings → Download backup** now and then.
+
+## Files
+
+- `index.html`, `styles.css`: the page and HUD
+- `src/main.js`: camera, controls, walking, game loop
+- `src/world.js`: the house, furniture, garden, lights, shop decor and helper mascots
+- `src/style.js`: the art style (toon materials, kawaii faces, smiling flowers, patterns)
+- `src/optimize.js`: speed-ups for phones (merging still objects, automatic quality)
+- `sw.js`, `manifest.webmanifest`, `icons/`: home-screen app and offline support
+- `src/avatar.js`: your character
+- `src/panels.js`: everything that opens when you use something
+- `src/ai.js`: the AI helpers
+- `src/state.js`: saved data, needs and coins
+- `vendor/`: bundled libraries (see `vendor/README.md`)
