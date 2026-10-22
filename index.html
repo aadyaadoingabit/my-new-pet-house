@@ -2,33 +2,85 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>My Pet House</title>
-  <meta name="description" content="A cozy house where you're the pet: habits, focus, fitness, journaling and a calm corner, all in one place.">
+  <meta name="description" content="A 3D house where you are the pet: walk between rooms, look after your needs with real-life habits, and get help from an AI assistant in every room.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
   <link rel="stylesheet" href="styles.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
-  <header class="topbar">
-    <a href="#home" class="brand">🏠 <span>My Pet House</span></a>
-    <button class="ghost" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
-  </header>
+  <div id="stage"></div>
 
-  <nav class="rooms" aria-label="Rooms">
-    <a href="#home" data-route="home"><span>🚪</span>Front Door</a>
-    <a href="#living" data-route="living"><span>🛋️</span>Living Room</a>
-    <a href="#study" data-route="study"><span>📚</span>Study</a>
-    <a href="#gym" data-route="gym"><span>🏋️</span>Gym &amp; Kitchen</a>
-    <a href="#garden" data-route="garden"><span>🌿</span>Calm Garden</a>
-    <a href="#bedroom" data-route="bedroom"><span>🛏️</span>Bedroom</a>
-    <a href="#attic" data-route="attic"><span>📈</span>Attic</a>
-  </nav>
+  <div id="loading">
+    <div class="loading-card">
+      <div class="big">🏠</div>
+      <p id="loadingText">Building your house…</p>
+    </div>
+  </div>
 
-  <main id="app" tabindex="-1"></main>
+  <!-- HUD -->
+  <div id="needs" class="hud-card" data-hud="needs" role="button" tabindex="0" aria-label="Your needs (tap to collapse)"></div>
+  <div class="hud-right">
+    <span class="pill" id="clock"></span>
+    <span class="pill" id="coins"></span>
+    <span class="pill" id="level"></span>
+  </div>
+  <div class="hud-room" id="roomName"></div>
+  <div class="pill timer-pill" id="timerPill" hidden></div>
+  <div class="hud-bar">
+    <select id="goTo" aria-label="Go to"></select>
+    <button data-hud="shop" title="Shop">🛒<span>Shop</span></button>
+    <button data-hud="progress" title="Progress">🏆<span>Progress</span></button>
+    <button data-hud="wardrobe" title="Wardrobe">👕<span>Me</span></button>
+    <button data-hud="walls" title="Toggle walls">🧱<span>Walls</span></button>
+    <button data-hud="settings" title="Settings">⚙️<span>Settings</span></button>
+  </div>
 
-  <div id="toast" role="status" aria-live="polite"></div>
+  <!-- Side panel for activities and AI chats -->
+  <aside id="panel" aria-live="polite">
+    <header>
+      <h2 id="panelTitle"></h2>
+      <button class="ghost" id="panelClose" aria-label="Close">✕</button>
+    </header>
+    <div id="panelBody"></div>
+  </aside>
+
+  <div id="welcome" hidden>
+    <div class="welcome-card">
+      <div class="big">🏡</div>
+      <h1>Welcome to your Pet House</h1>
+      <p>In this house, <b>you are the pet</b>. Your needs go down over time, just like in real life. Fill them back up by doing real things: eating, sleeping, moving, studying, and talking to people.</p>
+      <ul>
+        <li>👆 <b>Tap the floor</b> to walk, <b>tap furniture</b> to use it</li>
+        <li>🖱️ <b>Drag</b> to turn the camera, <b>scroll or pinch</b> to zoom</li>
+        <li>⌨️ Or walk with <b>WASD</b> / arrow keys</li>
+        <li>🤖 Every room has an <b>AI helper</b>. Tap one to chat.</li>
+        <li>🪙 Earn coins for real-life self-care and decorate your house</li>
+      </ul>
+      <label for="welcomeName">What's your name?</label>
+      <input id="welcomeName" placeholder="Your name">
+      <button id="welcomeGo">Move in 🏡</button>
+    </div>
+  </div>
+
+  <div id="hoverTip"></div>
   <div id="tooltip" role="tooltip"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 
-  <script src="app.js"></script>
+  <script>
+    // ES modules can't load from file:// pages, so explain how to open the app properly.
+    if (location.protocol === 'file:') {
+      document.getElementById('loadingText').innerHTML =
+        'This 3D app needs to be opened through a web server.<br><br>' +
+        'In this folder run: <code>python3 -m http.server</code><br>then open <code>http://localhost:8000</code>,<br>' +
+        'or use the GitHub Pages link.';
+    }
+    window.addEventListener('error', e => {
+      const t = document.getElementById('loadingText');
+      if (t) t.textContent = 'Something went wrong loading the house: ' + e.message;
+    });
+  </script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
