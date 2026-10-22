@@ -29,6 +29,13 @@ const outline = new OutlineEffect(renderer, { defaultThickness: 0.0042, defaultC
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 300);
+function fitCamera() {
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
+  camera.fov = aspect < 1 ? Math.min(62, 42 / Math.pow(aspect, 0.6)) : 42;
+  camera.updateProjectionMatrix();
+}
+fitCamera();
 camera.position.set(0.5, 7.6, 14.2);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -471,7 +478,7 @@ function loop() {
 
   // keep your character visible next to an open panel
   const mobile = window.innerWidth <= 640;
-  const want = currentPanel() ? (mobile ? [0, window.innerHeight * 0.3] : [Math.min(420, window.innerWidth - 24) / 2, 0]) : [0, 0];
+  const want = currentPanel() ? (mobile ? [0, window.innerHeight * 0.3] : [$('#panel').offsetWidth / 2, 0]) : [0, 0];
   viewShift[0] += (want[0] - viewShift[0]) * Math.min(1, dt * 6);
   viewShift[1] += (want[1] - viewShift[1]) * Math.min(1, dt * 6);
   if (Math.abs(viewShift[0]) + Math.abs(viewShift[1]) > 0.5) camera.setViewOffset(window.innerWidth, window.innerHeight, viewShift[0], viewShift[1], window.innerWidth, window.innerHeight);
@@ -495,8 +502,7 @@ function loop() {
 }
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+  fitCamera();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 

@@ -44,7 +44,7 @@ python3 -m http.server
 
 Or turn on **GitHub Pages** for this repo (Settings → Pages → deploy from branch) and open the link on any device.
 
-### On iPhone and iPad
+### On iPad (the main device) and iPhone
 
 1. Open the GitHub Pages link in **Safari**.
 2. Tap **Share**, then **Add to Home Screen**.
