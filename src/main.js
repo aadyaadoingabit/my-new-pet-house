@@ -405,10 +405,29 @@ document.querySelectorAll('[data-hud]').forEach(b => b.addEventListener('click',
     toast(state.walls === 'up' ? '🧱 Walls up' : '🧱 Cutaway view');
   } else if (h === 'needs') {
     $('#needs').classList.toggle('collapsed');
+  } else if (h === 'fullscreen') {
+    toggleFullscreen();
   } else openPanel(h);
 }));
 
 bus.addEventListener('change', updateHUD);
+
+// ---------- landscape + full screen ----------
+const docEl = document.documentElement;
+const canFullscreen = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+const installedApp = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+async function toggleFullscreen() {
+  try {
+    if (isFullscreen()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      await (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl, { navigationUI: 'hide' });
+      await screen.orientation?.lock?.('landscape').catch(() => {});
+    }
+  } catch (e) { toast('Full screen is not available here. Add it to your Home Screen instead!'); }
+}
+$('[data-hud="fullscreen"]').hidden = !canFullscreen || installedApp;
+const portraitBlock = matchMedia('(pointer: coarse) and (orientation: portrait)');
 
 if (!state.welcomed) {
   $('#welcome').hidden = false;
@@ -434,6 +453,7 @@ const camGoal = new THREE.Vector3();
 const camDelta = new THREE.Vector3();
 
 function loop() {
+  if (portraitBlock.matches) { clock.getDelta(); requestAnimationFrame(loop); return; } // paused until turned sideways
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   const p = avatar.root.position;
@@ -555,7 +575,7 @@ $('#installHint').addEventListener('click', async e => {
     save();
   }
 });
-const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
 const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 if (iOS && !standalone && state.welcomed) setTimeout(() => showInstallHint(false), 4000);
 

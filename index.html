@@ -45,6 +45,7 @@
     <button data-hud="wardrobe" title="Wardrobe">👕<span>Me</span></button>
     <button data-hud="walls" title="Toggle walls">🧱<span>Walls</span></button>
     <button data-hud="settings" title="Settings">⚙️<span>Settings</span></button>
+    <button data-hud="fullscreen" title="Full screen" hidden>⛶<span>Full screen</span></button>
   </div>
 
   <!-- Side panel for activities and AI chats -->
@@ -81,6 +82,13 @@
     </div>
   </div>
 
+  <div id="rotate" aria-live="polite">
+    <div class="rotate-card">
+      <div class="rotate-device" aria-hidden="true"><div class="rotate-screen">🏠</div></div>
+      <h2>Turn me sideways!</h2>
+      <p>My Pet House plays in landscape. Rotate your iPad and your house will be waiting.</p>
+    </div>
+  </div>
   <div id="hoverTip"></div>
   <div id="tooltip" role="tooltip"></div>
   <div id="toast" role="status" aria-live="polite"></div>

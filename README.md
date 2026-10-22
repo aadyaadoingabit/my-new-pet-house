@@ -48,9 +48,9 @@ Or turn on **GitHub Pages** for this repo (Settings → Pages → deploy from br
 
 1. Open the GitHub Pages link in **Safari**.
 2. Tap **Share**, then **Add to Home Screen**.
-3. Open **Pet House** from your home screen: it runs full screen like a real app, and works offline after the first visit (the AI helpers still need internet).
+3. Open **Pet House** from your home screen and hold your iPad **sideways** (the house plays in landscape): it runs full screen like a real app, and works offline after the first visit (the AI helpers still need internet).
 
-Touch controls: tap to walk, use the **joystick** (push it all the way to run), drag to turn the camera, pinch to zoom, **long-press** anything to see what it is, and swipe a panel down to close it.
+Touch controls: tap to walk, use the **joystick** (push it all the way to run), drag to turn the camera, pinch to zoom, **long-press** anything to see what it is, and swipe a panel down to close it. In Safari, the **Full screen** button hides the browser bars.
 
 Your data is saved in your browser only. Use **Settings → Download backup** now and then.
 
