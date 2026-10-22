@@ -145,6 +145,13 @@ hooks.avatar = avatar;
 hooks.onClose = () => { if (me.seated) standUp(); else avatar.setPose('idle'); };
 hooks.onReward = () => { if (!me.seated) avatar.cheer(); };
 hooks.goToBot = id => { const it = world.interactables.find(i => i.bot === id); if (it) goTo(it); };
+hooks.onRename = id => {
+  const b = BOTS.find(x => x.id === id);
+  world.relabelBot(id, `${b.emoji} ${b.name}`, `${b.name} (${b.role})`);
+  buildGoMenu();
+};
+// Owl studies right beside your desk during a focus session (body doubling)
+hooks.studyBuddy = on => world.moveBot('owl', on ? [4.05, -5.35] : null);
 hooks.onChange = full => {
   applyTime();
   if (full) {
@@ -383,10 +390,13 @@ function applyTime() {
 
 // "Go to" menu
 const goSel = $('#goTo');
-const byRoom = {};
-for (const it of world.interactables) (byRoom[it.room] ||= []).push(it);
-goSel.innerHTML = '<option value="">🚶 Go to…</option>' + Object.entries(ROOMS).filter(([id]) => byRoom[id]).map(([id, r]) =>
-  `<optgroup label="${r.emoji} ${r.name}">${byRoom[id].filter((it, i, a) => a.findIndex(o => o.name === it.name) === i).map(it => `<option value="${it.id}">${it.emoji} ${it.name}</option>`).join('')}</optgroup>`).join('');
+function buildGoMenu() {
+  const byRoom = {};
+  for (const it of world.interactables) (byRoom[it.room] ||= []).push(it);
+  goSel.innerHTML = '<option value="">🚶 Go to…</option>' + Object.entries(ROOMS).filter(([id]) => byRoom[id]).map(([id, r]) =>
+    `<optgroup label="${r.emoji} ${r.name}">${byRoom[id].filter((it, i, a) => a.findIndex(o => o.name === it.name) === i).map(it => `<option value="${it.id}">${it.emoji} ${it.name}</option>`).join('')}</optgroup>`).join('');
+}
+buildGoMenu();
 goSel.addEventListener('change', () => {
   const it = world.interactables.find(i => i.id === goSel.value);
   if (it) {

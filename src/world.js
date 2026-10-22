@@ -840,7 +840,7 @@ export function buildWorld(scene, bots) {
     const label = labelSprite(`${bot.emoji} ${bot.name}`, { scale: 0.9 });
     label.position.set(0, 1.92, 0);
     g.add(label);
-    world.bots[bot.id] = { group: g, hover, label };
+    const rec = world.bots[bot.id] = { group: g, hover, label, home: [x, z], target: null };
     const ph = Math.random() * 6;
     world.animated.push(t => {
       const s = Math.sin(t * 2.2 + ph);
@@ -848,9 +848,32 @@ export function buildWorld(scene, bots) {
       squish.scale.set(1 - s * 0.03, 1 + s * 0.04, 1 - s * 0.03);
       shadowDisk.scale.setScalar(1 - s * 0.12);
     });
-    interact(g, { id: 'bot:' + bot.id, name: `${bot.name} (${bot.role})`, emoji: bot.emoji, room: ROOM_OF_BOT[bot.id], panel: 'chat:' + bot.id,
+    rec.item = interact(g, { id: 'bot:' + bot.id, name: `${bot.name} (${bot.role})`, emoji: bot.emoji, room: ROOM_OF_BOT[bot.id], panel: 'chat:' + bot.id,
       approach: [x, z + 0.95], face: [x, z], bot: bot.id });
+    world.animated.push((t, dt) => {
+      if (!rec.target) return;
+      const p = g.position, [tx, tz] = rec.target;
+      const k = 1 - Math.exp(-dt * 2.5);
+      p.x += (tx - p.x) * k; p.z += (tz - p.z) * k;
+      rec.item.approach = [p.x, p.z + 0.95];
+      rec.item.face = [p.x, p.z];
+      if (Math.hypot(tx - p.x, tz - p.z) < 0.01) rec.target = null;
+    });
   }
+
+  // Rename a helper's floating name tag.
+  world.relabelBot = (id, text, name) => {
+    const rec = world.bots[id];
+    rec.group.remove(rec.label);
+    rec.label.material.map.dispose();
+    rec.label = labelSprite(text, { scale: 0.9 });
+    rec.label.position.set(0, 1.92, 0);
+    rec.label.userData.interact = rec.item;
+    rec.group.add(rec.label);
+    rec.item.name = name;
+  };
+  // Float a helper somewhere else (or back home with no position).
+  world.moveBot = (id, pos) => { const rec = world.bots[id]; rec.target = pos || rec.home; };
 
   // ===== SKY: sun, moon, clouds, stars =====
   world.hemi = new THREE.HemisphereLight('#ffffff', '#ffd9e8', 1.3);
