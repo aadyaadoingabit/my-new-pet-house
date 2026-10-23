@@ -1,5 +1,5 @@
 // The house's art style: superflat toon shading, kawaii faces and original smiling flowers.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.min.js';
 import { RoundedBoxGeometry } from '../vendor/RoundedBoxGeometry.js';
 import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
 

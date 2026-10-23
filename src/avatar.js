@@ -1,5 +1,5 @@
 // The player's character ("the pet"): a cute, rounded figure with smooth blended animation.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.min.js';
 import { toon, noOutline } from './style.js';
 
 export const LOOKS = {

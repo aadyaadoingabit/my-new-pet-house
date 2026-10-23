@@ -48,6 +48,18 @@ const DEFAULT_STATE = () => ({
   journal: {},
   fun: [],               // [{ date, text }]
   social: [],            // [{ date, text }]
+
+  // AI helpers (Phase 3)
+  botNames: {},          // { botId: custom name }
+  memory: {},            // { botId: { notes: [{ id, text, share }], pending, weekly: { at, text } } }
+  sharing: {},           // { botId: false } when a helper may not share notes with the team
+  promises: [],          // Sunny's tiny daily promises: [{ date, text, kept: null | true | false }]
+  courses: [],           // Owl's courses: [{ id, title, overview, units: [{ title, lessons: [{ title, goal, done, doneAt }] }], resources }]
+  parking: [],           // distraction parking lot: [{ id, text }]
+  focusSteps: [],        // tiny steps for the current task: [{ text, done }]
+  weights: [],           // optional weekly weigh-ins: [{ date, value }]
+  goal: null,            // { start, target, perWeek } in the chosen unit
+  weightUnit: 'kg',
 });
 
 function load() {

@@ -18,18 +18,31 @@ The full design plan lives in a separate design doc; the app is being built in p
 
 ## The AI helpers
 
-| Helper | Room | What they do differently |
+| Helper | Room | What they do |
 |---|---|---|
-| 🌞 Sunny | Living room | Habit coach. Sees your habits and streaks and can suggest new habits you add with one tap |
-| 🦉 Professor Owl | Study | Tutor. Explains topics, quizzes you and **makes flashcards** that land on your bookshelf |
-| 🧑‍🍳 Chef Basil | Kitchen | Sees what you ate today and plans easy meals |
-| 🦖 Coach Rex | Home gym | Builds a workout for your energy level that you can log when done |
-| 🌙 Luna | Bedroom | Reads today's journal page and helps you reflect or wind down |
+| 🌞 Sunny | Living room | Growth guide for attachment, fear of abandonment and consistency (DBT and CBT skills, tiny daily promises, ongoing-session memory) |
+| 🦉 Professor Owl | Study | Builds full courses on anything, teaches them in bite-size lessons with reviews, makes flashcards, searches the web with sources, and helps you focus ADHD-style (tiny steps, flower timer, parking lot, studies beside you) |
+| 🧑‍🍳 Chef Basil | Kitchen | Healthy, steady weight loss through food; plans meals from what you logged |
+| 🦖 Coach Rex | Home gym | Healthy weight loss through workouts that fit your energy; shares your optional weekly weigh-ins with Basil |
+| 🌙 Luna | Bedroom | Gentle journal companion (guided nightly journal comes in Phase 4) |
 | 🪞 Mirror Mo | Bathroom | Confidence coach for kinder self-talk |
-| 🌿 Sage | Garden | Calm guide using ideas from CBT and mindfulness, with crisis resources |
+| 🌿 Sage | Garden | Spiritual and holistic guide: meditation, breath, values, meaning (any or no religion) |
 | 🎧 DJ Mochi | Music room | Music guide who introduces new genres (Spotify comes in Phase 5) |
 
-The helpers use Claude. To turn them on, walk to the **mailbox 📬** in the garden and paste an API key from [platform.claude.com](https://platform.claude.com). API use costs a little money per message. The key is stored only in your browser. Without a key, the helpers still give simple offline tips.
+Every helper:
+- **Can be renamed** (tap ✏️ Rename in their chat).
+- **Remembers you**: after a chat it keeps a few short notes. See, add or delete them in Settings → "See what your helpers remember".
+- **Works as a team**: helpers can share useful notes with each other (you can switch this off per helper).
+- **Notices patterns** in your own logs and gives a weekly "This week I noticed..." check-in. Observations, never diagnoses.
+
+### What powers the helpers (Settings → mailbox 📬)
+
+- **💜 Free Claude inside claude.ai:** open your house as a Claude artifact and the helpers talk with Claude on your own Claude account (free accounts work; there is a usage limit). No API key. The first message asks you to tap **Allow**. Owl can't web search here.
+- **🌸 Free on-iPad AI (default elsewhere):** runs completely on your iPad with [WebLLM](https://github.com/mlc-ai/web-llm) and Meta's open Llama 3.2 models. Free, private (chats never leave the device) and works offline. One-time download: *Quick* (about 0.9 GB) or *Smarter* (about 2.3 GB, best on M1 iPads or newer). Needs iPadOS 26 or newer (WebGPU).
+- **✨ Claude (optional, paid):** the smartest option, plus web search for Owl. Paste an API key from [platform.claude.com](https://platform.claude.com); each message costs a little.
+- **Offline mode:** with neither, helpers give built-in tips, tiny steps and pattern check-ins.
+
+Whatever powers them, if you write something that sounds like a crisis, the app always shows helpline numbers.
 
 > The Calm Garden and Sage are for everyday self-care, not a replacement for a therapist. If you're struggling, please reach out to someone you trust or a helpline ([findahelpline.com](https://findahelpline.com)).
 

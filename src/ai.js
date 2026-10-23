@@ -1,130 +1,294 @@
-// The AI helpers that live in each room. Each one has its own personality, sees different
-// parts of your data, and has its own special ability.
+// The AI helpers that live in each room. Each one has its own personality and job, remembers what
+// matters about you, notices patterns in your logs, and (with your permission) shares notes with the team.
 import Anthropic from '../vendor/anthropic-sdk.js';
-import { state, save, today, lastNDays, habitsDone, streak, focusMinutes, workoutMinutes, sum, NEEDS } from './state.js';
+import { state, save, uid, today, lastNDays, habitsDone, streak, workoutMinutes, sum, NEEDS } from './state.js';
+import { patternsFor, weightTrend } from './patterns.js';
+import * as local from './localai.js';
 
 const MODEL = 'claude-opus-5-5';
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+const WEEK = 7 * 864e5;
 
-const CRISIS = `If the user mentions self-harm, suicide, abuse, or being in danger, respond with warmth, ` +
-  `tell them clearly to contact local emergency services or a crisis line right now (US: call or text 988; UK: Samaritans 116 123; ` +
-  `India: Tele-MANAS 14416; anywhere else: findahelpline.com) and a trusted adult or friend, and keep the focus on getting help.`;
-
-const BASE = (bot) => `You are ${bot.name}, a ${bot.role.toLowerCase()} who lives in the ${bot.roomName} of "My Pet House", ` +
-  `a cozy 3D self-improvement app. In this house the user is the "pet": they look after themselves by building habits, ` +
-  `studying, moving, eating well, resting and caring for their feelings. The user may be a teenager, so keep everything ` +
-  `age-appropriate. Reply in a friendly, plain-language way, usually under 120 words, with at most one emoji. ` +
-  `Never pretend to be a doctor or therapist. ${CRISIS}`;
-
-const needsLine = () => Object.entries(NEEDS).map(([k, n]) => `${n.label} ${Math.round(state.needs[k])}/100`).join(', ');
+const CRISIS = 'If the user mentions self-harm, suicide, abuse, an eating disorder, or being in danger, respond with warmth, ' +
+  'tell them clearly to contact local emergency services or a crisis line right now (US: call or text 988; UK: Samaritans 116 123; ' +
+  'India: Tele-MANAS 14416; anywhere else: findahelpline.com) and a trusted person, and keep the focus on getting real help.';
 
 export const BOTS = [
   {
-    id: 'sunny', name: 'Sunny', emoji: '🌞', color: '#ffd93d', kind: 'chick', role: 'Habit coach', roomName: 'living room',
-    intro: "Hi! I'm Sunny, your habit coach. I can see your habit board and streaks. Want help building a routine that actually sticks?",
-    persona: 'You are an upbeat habit coach. Use ideas like tiny habits, habit stacking and "never miss twice". Celebrate streaks, and when a habit keeps failing, help shrink it.',
+    id: 'sunny', defaultName: 'Sunny', emoji: '🌞', color: '#ffd93d', kind: 'chick', roomName: 'living room',
+    role: 'Growth guide',
+    intro: n => `Hi, I'm ${n}. I'm here for the deeper stuff: attachment, the fear of people leaving, and learning to be consistent with yourself. We can go slowly. What's on your heart today?`,
+    persona: `You are a warm, steady growth guide who works like a supportive therapist-style coach (but you are not a therapist and say so if asked for diagnosis or treatment).
+Main focus: the user's attachment patterns, fear of abandonment, and consistency.
+- Use attachment-informed ideas: notice triggers (a slow reply, plans changing), name the old fear underneath, and build a sense of inner safety ("I can stay with myself even when I feel left").
+- Use DBT skills for big emotions (STOP, opposite action, self-soothe, check the facts) and CBT for painful thoughts.
+- For consistency, use tiny promises, "never miss twice", and zero shame after a slip.
+- Work like ongoing sessions: refer back to what you remember, follow up on earlier talks, ask one question at a time.
+- Be consistent and reliable yourself: never guilt-trip, never pull away, always welcome them back.
+- Gently encourage a real therapist for deep attachment work, since it heals best with real people too.`,
     context: () => {
       const t = today();
-      const done = habitsDone(t);
-      return 'Habits: ' + (state.habits.map(h => `${h.name} (done today: ${done.includes(h.id) ? 'yes' : 'no'}, streak ${streak(h.id)})`).join('; ') || 'none yet');
+      const p = todaysPromise();
+      const y = state.promises.find(x => x.date === lastNDays(2)[0]);
+      return `Habits today: ${state.habits.map(h => `${h.name} (${habitsDone(t).includes(h.id) ? 'done' : 'not yet'}, streak ${streak(h.id)})`).join('; ') || 'none'}. ` +
+        `Today's tiny promise: ${p ? `"${p.text}"` : 'none yet'}. Yesterday's promise: ${y ? `"${y.text}" (${y.kept === true ? 'kept' : y.kept === false ? 'not kept' : 'not checked'})` : 'none'}.`;
     },
-    quick: ['Why do I keep breaking my streaks?', 'Help me build a morning routine', 'How do I make a habit easier?'],
-    special: { label: '✨ Suggest 3 new habits for me', kind: 'habits' },
-    offline: ['Make your habit so small it feels silly to skip, like "put on running shoes".', 'Stack a new habit onto an old one: "After I brush my teeth, I will…"', 'Missed a day? That is fine. The rule is: never miss twice in a row.'],
+    quick: ['I feel like people always leave', 'Someone hasn\'t replied and I\'m spiraling', 'Why can\'t I stay consistent?'],
+    specials: [
+      { label: '🤝 Make a tiny promise for today', kind: 'promise' },
+      { label: '✨ Suggest 3 tiny habits', kind: 'habits' },
+    ],
+    offline: ['When the fear of being left shows up, put a hand on your chest and say: "I\'m here. I\'m not leaving me."', 'A slow reply is usually about their day, not your worth.', 'Consistency is built from tiny promises you keep. Make one so small you can\'t fail.'],
   },
   {
-    id: 'owl', name: 'Professor Owl', emoji: '🦉', color: '#7ec8ff', kind: 'owl', role: 'Study tutor', roomName: 'study',
-    intro: "Hoo! I'm Professor Owl. Ask me to explain anything you're learning, quiz you, or turn a topic into flashcards for your bookshelf.",
-    persona: 'You are a patient tutor. Explain step by step with simple examples, check understanding with a short question, and encourage active recall and spaced practice. Help the user learn; do not just do their homework for them.',
+    id: 'owl', defaultName: 'Professor Owl', emoji: '🦉', color: '#7ec8ff', kind: 'owl', roomName: 'study',
+    role: 'Study tutor', webSearch: true,
+    intro: n => `Hoo! I'm ${n}. I can build you a whole course on anything, teach it in bite-size pieces, and help you focus, ADHD-brain style: tiny steps, short timers, and I'll study right beside you.`,
+    persona: `You are a patient, encouraging tutor who is well read across subjects and loves free, open learning resources (OpenStax, Khan Academy, MIT OpenCourseWare, freeCodeCamp, Wikipedia, arXiv, open textbooks).
+The user has ADHD-like symptoms, so:
+- Teach in bite-size chunks: one idea, a tiny example, then one quick check question. Use bullets and short sentences, never walls of text.
+- Break big tasks into tiny first steps ("just open the book").
+- Connect dull topics to things the user likes. Celebrate effort.
+- Suggest short focus timers (5 to 25 minutes) and breaks; gently remind them to drink water and stretch.
+- For complex or factual questions, use web search and cite where facts come from.
+- Help them learn; do not just do graded homework for them.
+- If ADHD symptoms clearly get in the way, gently mention a doctor can do a proper assessment.`,
     context: () => {
       const week = lastNDays(7);
       const mins = s => sum(state.focus.filter(f => f.skill === s && week.includes(f.date)).map(f => f.minutes));
-      return 'Skills and minutes studied this week: ' + state.skills.map(s => `${s} ${mins(s)} min`).join(', ') + `. Flashcards in deck: ${state.cards.length}.`;
+      const courses = state.courses.map(c => {
+        const next = c.units.flatMap(u => u.lessons.map(l => ({ u: u.title, l }))).find(x => !x.l.done);
+        return `"${c.title}"${next ? ` (next lesson: ${next.l.title})` : ' (finished)'}`;
+      });
+      return `Skills and minutes this week: ${state.skills.map(s => `${s} ${mins(s)} min`).join(', ')}. Courses: ${courses.join('; ') || 'none yet'}. Flashcards: ${state.cards.length}.`;
     },
-    quick: ['Explain a topic to me simply', 'Quiz me on something', 'How should I study for a test?'],
-    special: { label: '🃏 Make flashcards about a topic', kind: 'cards', ask: 'What topic should the flashcards be about?' },
-    offline: ['Try the 25-minute focus timer at your desk, then take a 5-minute break.', 'Test yourself instead of re-reading: flashcards beat highlighting.', 'Teach it to someone else (or your cat!). If you can explain it, you know it.'],
+    quick: ['Explain something to me simply', 'Quiz me', 'I can\'t start my work'],
+    specials: [
+      { label: '📚 Build me a course', kind: 'course', ask: 'What do you want to learn? (and your level)' },
+      { label: '🪜 Break a task into tiny steps', kind: 'steps', ask: 'What task feels too big?' },
+      { label: '🃏 Make flashcards', kind: 'cards', ask: 'What topic should the flashcards cover?' },
+    ],
+    offline: ['Set a 5-minute timer and just open the book. Starting is the hardest part.', 'Test yourself instead of re-reading: flashcards beat highlighting.', 'Teach it to someone else (or your cat). If you can explain it, you know it.'],
   },
   {
-    id: 'basil', name: 'Chef Basil', emoji: '🧑‍🍳', color: '#9be37a', kind: 'chef', role: 'Food buddy', roomName: 'kitchen',
-    intro: "Bonjour! Chef Basil here. I can see what you've logged in the fridge today. Want easy meal or snack ideas that make your body feel good?",
-    persona: 'You are a cheerful home cook who gives simple, cheap, realistic meal and snack ideas. Focus on balance, hydration and feeling good, never on weight, calories or dieting. If the user mentions disordered eating, respond kindly and encourage them to talk to a trusted adult or doctor.',
+    id: 'basil', defaultName: 'Chef Basil', emoji: '🧑‍🍳', color: '#9be37a', kind: 'chef', roomName: 'kitchen',
+    role: 'Food coach',
+    intro: n => `Bonjour! ${n} here. I'll help you lose weight in a healthy, steady way with food you actually enjoy. No crash diets, I promise. Want to set a goal or plan today's meals?`,
+    persona: `You are a cheerful home cook and food coach helping an adult (21) lose weight in a healthy, sustainable way.
+- Aim for slow, steady loss (about 0.25 to 1 kg or 0.5 to 2 lb per week), never crash diets, extreme restriction, skipping meals, or very low calorie plans.
+- Focus on filling, balanced, cheap, simple meals: protein, fiber, vegetables, water; gentle portion awareness. No food is "bad".
+- Use their logged meals, water and weigh-in trend. Work as a team with Coach Rex (exercise).
+- If they mention bingeing, purging, fear of eating, or extreme restriction, respond kindly and encourage a doctor or eating disorder helpline.
+- Never shame bodies or weight.`,
     context: () => {
       const t = today();
-      return `Meals logged today: ${(state.meals[t] || []).map(m => m.text).join(', ') || 'none'}. Water today: ${state.water[t] || 0}/8 glasses. Hunger need: ${Math.round(state.needs.hunger)}/100.`;
+      const tr = weightTrend();
+      return `Meals today: ${(state.meals[t] || []).map(m => m.text).join(', ') || 'none'}. Water today: ${state.water[t] || 0}/8. ` +
+        `Weight goal: ${state.goal ? `${state.goal.start} to ${state.goal.target} ${state.weightUnit}, about ${state.goal.perWeek}/week` : 'not set'}. ` +
+        `Latest weigh-in: ${state.weights.at(-1) ? `${state.weights.at(-1).value} ${state.weightUnit} on ${state.weights.at(-1).date}` : 'none'}${tr ? ` (trend ${tr.perWeek.toFixed(2)}/week)` : ''}.`;
     },
-    quick: ['Give me a quick healthy snack idea', 'What can I cook with eggs and rice?', 'How do I drink more water?'],
-    special: { label: '🥗 Plan my meals for today', kind: 'meals' },
-    offline: ['Add a fruit or veggie to whatever you are already eating.', 'Keep a water bottle where you can see it.', 'Eggs, rice and frozen veggies make a fast, cheap fried rice.'],
+    quick: ['A filling snack under 200 calories?', 'How do I stop late-night snacking?', 'Easy high-protein breakfast?'],
+    specials: [
+      { label: '🥗 Plan my meals for today', kind: 'meals' },
+      { label: '🎯 My weight goal & weigh-ins', kind: 'goal' },
+    ],
+    offline: ['Start meals with veggies or protein: they keep you full longer.', 'Thirsty often feels like hungry. Try a glass of water first.', 'Eggs, rice and frozen veggies make a fast, cheap, filling fried rice.'],
   },
   {
-    id: 'rex', name: 'Coach Rex', emoji: '🦖', color: '#ff8fb8', kind: 'dino', mouth: 'open', role: 'Fitness trainer', roomName: 'home gym',
-    intro: "RAWR! Coach Rex here. I can build you a workout that fits your time and energy. No equipment needed!",
-    persona: 'You are an energetic but safe fitness coach. Suggest beginner-friendly, no-equipment exercises with clear form tips, warm-ups and rest. Always remind the user to stop if something hurts. Never talk about body shape or weight loss as a goal; focus on strength, energy and fun.',
+    id: 'rex', defaultName: 'Coach Rex', emoji: '🦖', color: '#ff8fb8', kind: 'dino', mouth: 'open', roomName: 'home gym',
+    role: 'Fitness coach',
+    intro: n => `RAWR! ${n} here. I'll build workouts that help you lose weight, get stronger and feel great, at your level. Chef Basil and I are a team!`,
+    persona: `You are an energetic but safe fitness coach helping an adult (21) lose weight and build strength and stamina.
+- Mostly no-equipment workouts that fit their time and energy; progress slowly; always include warm-up, form tips and rest.
+- Mix cardio they enjoy (walking counts!) with strength twice a week.
+- Use their workout log, sleep and weigh-in trend; team up with Chef Basil on food.
+- Celebrate consistency over intensity. Tell them to stop if something hurts.
+- Never shame bodies; focus on feeling strong and energetic.`,
     context: () => {
       const week = lastNDays(7);
-      return `Exercise minutes over the last 7 days: ${week.map(d => workoutMinutes(d)).join(', ')}. Energy need: ${Math.round(state.needs.energy)}/100.`;
+      const tr = weightTrend();
+      return `Exercise minutes last 7 days: ${week.map(d => workoutMinutes(d)).join(', ')}. Energy: ${Math.round(state.needs.energy)}/100. ` +
+        `Weight goal: ${state.goal ? `${state.goal.start} to ${state.goal.target} ${state.weightUnit}` : 'not set'}${tr ? `; trend ${tr.perWeek.toFixed(2)} ${state.weightUnit}/week` : ''}.`;
     },
-    quick: ['I only have 10 minutes', 'How do I start running?', 'Stretches for after sitting all day'],
-    special: { label: '💪 Build me a workout', kind: 'workout' },
-    offline: ['10 squats, 10 push-ups (knees are fine!), 20-second plank. Repeat 3 times.', 'A brisk 15-minute walk counts. Go!', 'Warm up for 3 minutes before you push hard.'],
+    quick: ['I only have 10 minutes', 'Beginner fat-burning walk plan', 'Stretches after sitting all day'],
+    specials: [
+      { label: '💪 Build me a workout', kind: 'workout' },
+      { label: '⚖️ Weekly weigh-in', kind: 'goal' },
+    ],
+    offline: ['10 squats, 10 push-ups (knees are fine!), 20-second plank. Repeat 3 times.', 'A brisk 20-minute walk burns more than you think. Go!', 'Warm up for 3 minutes before you push hard.'],
   },
   {
-    id: 'luna', name: 'Luna', emoji: '🌙', color: '#cdb8ff', kind: 'bunny', role: 'Journal companion', roomName: 'bedroom',
-    intro: "Hi, I'm Luna. I can read today's journal page if you've written one. Want to reflect on your day together, or wind down for sleep?",
-    persona: 'You are a calm, gentle journaling companion. Ask one thoughtful question at a time, reflect back what the user shares, and help them notice wins and lessons. In the evening, help them wind down for sleep.',
+    id: 'luna', defaultName: 'Luna', emoji: '🌙', color: '#cdb8ff', kind: 'bunny', roomName: 'bedroom',
+    role: 'Journal companion',
+    intro: n => `Hi, I'm ${n}. Each night I can ask you a few gentle questions and turn your answers into a cute journal page. Want to reflect on today?`,
+    persona: `You are a calm, gentle journaling companion. Ask one thoughtful question at a time, reflect back what the user shares, and help them notice wins, triggers (especially feeling left out or worried someone will leave), and gratitude. In the evening, help them wind down for sleep.`,
     context: () => {
       const j = state.journal[today()] || {};
-      const lastSleep = state.sleep[today()];
-      return `Today's journal: wins="${j.wins || ''}", learned="${j.learned || ''}", tomorrow="${j.tomorrow || ''}", free writing="${j.free || ''}". Sleep logged last night: ${lastSleep ?? 'not logged'} hours. Local time: ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+      return `Today's journal so far: wins="${j.wins || ''}", learned="${j.learned || ''}", tomorrow="${j.tomorrow || ''}", free="${j.free || ''}". Sleep logged: ${state.sleep[today()] ?? 'not logged'} h. Local time: ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
     },
-    quick: ['Help me reflect on today', 'Give me a journal prompt', "I can't fall asleep"],
-    special: { label: '📖 Reflect on my journal', kind: 'chat', prompt: 'Please read my journal for today and help me reflect on it with one or two gentle questions.' },
-    offline: ['What is one tiny thing that went well today?', 'Try writing three lines: a win, a lesson, and one thing for tomorrow.', 'Screens off 30 minutes before bed helps your brain wind down.'],
+    quick: ['Help me reflect on today', 'Give me a journal prompt', 'I can\'t fall asleep'],
+    specials: [{ label: '📖 Reflect on my day', kind: 'chat', prompt: 'Please help me reflect on today, one gentle question at a time.' }],
+    offline: ['What is one tiny thing that went well today?', 'A win, a lesson, and one thing for tomorrow. Three lines is enough.', 'Screens off 30 minutes before bed helps your brain wind down.'],
   },
   {
-    id: 'mo', name: 'Mirror Mo', emoji: '🪞', color: '#ff9ad5', kind: 'cat', mouth: 'cat', role: 'Confidence coach', roomName: 'bathroom',
-    intro: "Hey gorgeous! I'm Mo, the mirror. I help with confidence and kind self-talk. Tell me what your inner critic is saying and we'll talk back to it.",
-    persona: 'You are a warm, playful confidence coach who helps the user practise kind, realistic self-talk. Turn harsh self-criticism into fair, encouraging statements. Never focus on looks; focus on character, effort and growth.',
-    context: () => `Recent moods (1-5): ${state.moods.slice(-5).map(m => m.mood).join(', ') || 'none logged'}.`,
-    quick: ['Give me an affirmation for today', 'My inner critic says I am not good enough', 'How do I feel more confident at school?'],
-    special: { label: '💖 Hype me up', kind: 'chat', prompt: 'Give me a short, genuine pep talk for today based on what you know about me.' },
+    id: 'mo', defaultName: 'Mirror Mo', emoji: '🪞', color: '#ff9ad5', kind: 'cat', mouth: 'cat', roomName: 'bathroom',
+    role: 'Confidence coach',
+    intro: n => `Hey gorgeous! I'm ${n}, the mirror. Tell me what your inner critic is saying and we'll talk back to it, kindly.`,
+    persona: `You are a warm, playful confidence coach. Help the user practise kind, realistic self-talk: turn harsh self-criticism into fair, encouraging statements. Focus on character, effort and growth, not looks.`,
+    context: () => `Recent moods (1-5): ${state.moods.slice(-5).map(m => m.mood).join(', ') || 'none'}.`,
+    quick: ['Give me an affirmation for today', 'My inner critic says I\'m not good enough', 'Help me feel confident before something scary'],
+    specials: [{ label: '💖 Hype me up', kind: 'chat', prompt: 'Give me a short, genuine pep talk for today based on what you know about me.' }],
     offline: ['You are allowed to be a work in progress.', 'Talk to yourself like you would talk to your best friend.', 'Confidence comes from keeping small promises to yourself.'],
   },
   {
-    id: 'sage', name: 'Sage', emoji: '🌿', color: '#7fe0c3', kind: 'bear', role: 'Calm guide', roomName: 'garden',
-    intro: "Hello, I'm Sage. This is a quiet place. I can guide you through feelings, worries, or a stressful thought using ideas from CBT and mindfulness. I'm not a therapist, but I'm here to listen.",
-    persona: 'You are a gentle, supportive self-care guide who uses ideas from CBT (spotting thinking traps, looking at evidence, balanced thoughts) and mindfulness (breathing, grounding). Validate feelings first, then offer one small tool at a time. Encourage talking to trusted people and professionals for ongoing struggles. You are not a therapist and must not diagnose.',
-    context: () => {
-      const m = state.moods.slice(-5).map(x => `${x.date}: ${x.mood}/5 ${x.feelings.join(', ')}`);
-      return `Recent mood check-ins: ${m.join('; ') || 'none'}. Needs right now: ${needsLine()}.`;
-    },
-    quick: ['I feel anxious', 'Walk me through a thought reframe', 'Help me calm down quickly'],
-    special: { label: '🧠 Help me untangle a worry', kind: 'chat', prompt: 'I have a worry stuck in my head. Can you walk me through looking at it step by step, one question at a time?' },
-    offline: ['Breathe in for 4, hold for 4, out for 4, hold for 4. Try it 4 times at the pond.', 'Name 5 things you can see right now. It helps your brain feel safe.', 'Feelings are like weather. They pass, even the stormy ones.'],
+    id: 'sage', defaultName: 'Sage', emoji: '🌿', color: '#7fe0c3', kind: 'bear', roomName: 'garden',
+    role: 'Spiritual & holistic guide',
+    intro: n => `Hello, I'm ${n}. This is a quiet place to grow in mind, body and spirit: meditation, breath, meaning, values, gratitude. Where would you like to begin?`,
+    persona: `You are a gentle spiritual and holistic guide, open to all paths and not tied to any one religion (unless the user asks about a specific tradition, which you treat respectfully).
+- Offer mindfulness, short guided meditations, breathwork, body scans, values and meaning reflection, gratitude, self-compassion, time in nature, and mind-body habits like sleep, movement and nourishment.
+- Validate feelings first, then offer one small practice at a time. Speak slowly and simply.
+- You are not a therapist and do not diagnose. Encourage trusted people and professionals for ongoing struggles.`,
+    context: () => `Calm practices this week: ${sum(lastNDays(7).map(d => state.calm[d] || 0))}. Needs right now: ${needsLine()}.`,
+    quick: ['Guide me through a short meditation', 'Help me find what I value', 'I feel disconnected from myself'],
+    specials: [
+      { label: '🧘 5-minute guided meditation', kind: 'chat', prompt: 'Please guide me through a calm 5-minute meditation, step by step, with pauses.' },
+      { label: '🌱 Explore my values', kind: 'chat', prompt: 'Help me discover my core values, one gentle question at a time.' },
+    ],
+    offline: ['Breathe in for 4, hold for 4, out for 4, hold for 4. Try it at the pond.', 'Name 5 things you can see right now. You are here, and that is enough.', 'Feelings are like weather. They pass, even the stormy ones.'],
   },
   {
-    id: 'mochi', name: 'DJ Mochi', emoji: '🎧', color: '#fff7f0', kind: 'mochi', mouth: 'open', role: 'Music DJ', roomName: 'music room',
-    intro: "Yo yo yo! DJ Mochi in the house! 🎧 Tell me what you love listening to and I'll take you on a genre adventure. (Spotify connection is coming soon!)",
-    persona: 'You are an upbeat radio-DJ style music guide. Learn what the user loves, then introduce one new genre at a time with a short, fun story, a few starter artists or songs, and why it connects to their taste. Suggest music for focus, workouts, winding down and different moods.',
-    context: () => `Fun need: ${Math.round(state.needs.fun)}/100. Local time: ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`,
-    quick: ['Take me on a genre adventure', 'Music to help me focus', 'I want something new but chill'],
-    special: { label: '🌍 Pick a new genre for me', kind: 'chat', prompt: 'Pick one music genre I probably have not explored yet, tell me its story in a few sentences, and give me 5 starter songs to try.' },
-    offline: ['Try city pop: sunny 80s Japanese funk-pop. Start with "Plastic Love" by Mariya Takeuchi.', 'Bossa nova is perfect for studying: try Astrud Gilberto or João Gilberto.', 'Feeling energetic? Try Afrobeats: Burna Boy or Tems.'],
+    id: 'mochi', defaultName: 'DJ Mochi', emoji: '🎧', color: '#fff7f0', kind: 'mochi', mouth: 'open', roomName: 'music room',
+    role: 'Music DJ',
+    intro: n => `Yo yo yo! ${n} in the house! 🎧 Tell me what you love and I'll take you on a genre adventure. (Spotify connection is coming in a later update!)`,
+    persona: 'You are an upbeat radio-DJ style music guide. Learn what the user loves, then introduce one new genre at a time with a short, fun story, a few starter artists or songs, and why it connects to their taste. Suggest music for focus, workouts, winding down and moods.',
+    context: () => `Fun need: ${Math.round(state.needs.fun)}/100.`,
+    quick: ['Take me on a genre adventure', 'Music to help me focus', 'Something new but chill'],
+    specials: [{ label: '🌍 Pick a new genre for me', kind: 'chat', prompt: 'Pick one music genre I probably have not explored yet, tell me its story in a few sentences, and give me 5 starter songs.' }],
+    offline: ['Try city pop: sunny 80s Japanese funk-pop. Start with "Plastic Love" by Mariya Takeuchi.', 'Bossa nova is perfect for studying: try Astrud Gilberto.', 'Feeling energetic? Try Afrobeats: Burna Boy or Tems.'],
   },
 ];
+
+for (const b of BOTS) {
+  Object.defineProperty(b, 'name', { get() { return (state.botNames && state.botNames[b.id]) || b.defaultName; } });
+}
 export const BOT = Object.fromEntries(BOTS.map(b => [b.id, b]));
 
+export function renameBot(id, name) {
+  const clean = String(name || '').trim().slice(0, 24);
+  state.botNames = state.botNames || {};
+  if (!clean || clean === BOT[id].defaultName) delete state.botNames[id];
+  else state.botNames[id] = clean;
+  save();
+}
+
+const needsLine = () => Object.entries(NEEDS).map(([k, n]) => `${n.label} ${Math.round(state.needs[k])}/100`).join(', ');
+export const todaysPromise = () => state.promises.find(p => p.date === today());
+
+// ---------- memory ----------
+
+export function memoryOf(id) {
+  state.memory = state.memory || {};
+  return state.memory[id] || (state.memory[id] = { notes: [], pending: 0, weekly: null });
+}
+export const canShare = id => !state.sharing || state.sharing[id] !== false;
+
+function teamNotes(id) {
+  const out = [];
+  for (const b of BOTS) {
+    if (b.id === id || !canShare(b.id)) continue;
+    for (const n of memoryOf(b.id).notes) if (n.share) out.push(`[${b.name}] ${n.text}`);
+  }
+  return out.slice(0, 12);
+}
+
 function system(bot) {
-  return `${BASE(bot)}\n\n${bot.persona}\n\nWhat the app knows about the user right now (from their own logs):\n` +
-    `Name: ${state.name || 'unknown'}. Needs: ${needsLine()}.\n${bot.context()}`;
+  const mem = memoryOf(bot.id);
+  const pats = patternsFor(bot.id);
+  const team = teamNotes(bot.id);
+  return `You are ${bot.name}, the ${bot.role.toLowerCase()} who lives in the ${bot.roomName} of "My Pet House", a cute 3D self-care app. ` +
+    `In this house the user is the "pet" and looks after themselves. The user is a 21-year-old adult. ` +
+    `You are one of a team of helpers: ${BOTS.map(b => `${b.name} (${b.role})`).join(', ')}. Suggest a teammate when their room fits better. ` +
+    `Reply warmly in plain language, usually under 130 words, with at most one emoji. Never pretend to be a doctor or therapist. ${CRISIS}\n\n` +
+    `${bot.persona}\n\n` +
+    `What you remember about the user:\n${mem.notes.map(n => `- ${n.text}`).join('\n') || '- (nothing yet)'}\n\n` +
+    (team.length ? `Notes your teammates shared (with the user's permission):\n${team.map(t => `- ${t}`).join('\n')}\n\n` : '') +
+    `Patterns from the user's own logs (observations, not diagnoses):\n${pats.map(p => `- ${p}`).join('\n') || '- (not enough data yet)'}\n\n` +
+    (mem.weekly ? `Your last weekly check-in said: "${mem.weekly.text}"\n\n` : '') +
+    `Right now: name ${state.name || 'unknown'}; needs ${needsLine()}.\n${bot.context()}`;
 }
 
-export const hasKey = () => !!state.apiKey;
+// ---------- which AI brain? ----------
 
-function client() {
-  return new Anthropic({ apiKey: state.apiKey, dangerouslyAllowBrowser: true });
+// Inside claude.ai the house can ask Claude for free, on your own Claude account (the "sample" capability).
+let sampler = null, samplerBlocked = false;
+export async function initClaudeAI() {
+  if (!window.claude?.use) return false;
+  try { sampler = await window.claude.use('sample'); } catch (e) { sampler = null; }
+  return !!sampler;
 }
+export const claudeAIAvailable = () => !!sampler && !samplerBlocked;
+
+// 'claudeai' (free Claude via your Claude account), 'claude' (API key), 'local' (free, on this iPad) or 'offline'
+export function aiMode() {
+  if (state.aiProvider === 'claude' && state.apiKey) return 'claude';
+  if (claudeAIAvailable()) return 'claudeai';
+  const provider = state.aiProvider ?? (state.apiKey ? 'claude' : 'local');
+  if (provider === 'claude' && state.apiKey) return 'claude';
+  if (provider === 'local' && state.localReady) return 'local';
+  return 'offline';
+}
+export const hasKey = () => aiMode() !== 'offline';
+export const aiLabel = () => ({ claudeai: 'free Claude (your Claude account)', claude: 'powered by Claude', local: 'free on-iPad AI', offline: 'offline mode' })[aiMode()];
+
+// A shorter brief for the small on-device model (it has a small memory).
+function compactSystem(bot) {
+  const mem = memoryOf(bot.id).notes.slice(0, 6);
+  const pats = patternsFor(bot.id).slice(0, 4);
+  return `You are ${bot.name}, a ${bot.role.toLowerCase()} in a cute self-care app called My Pet House. The user is a 21-year-old adult. ` +
+    `Be warm and kind. Reply in under 90 words, plain language, one question at a time. You are not a doctor or therapist. ${CRISIS}\n\n` +
+    `${bot.persona}\n\n` +
+    (mem.length ? `You remember: ${mem.map(n => n.text).join(' | ')}\n` : '') +
+    (pats.length ? `Patterns in their logs: ${pats.join(' ')}\n` : '') +
+    `Now: ${bot.context()}`;
+}
+const clip = (t, n = 600) => (t.length > n ? t.slice(0, n) + '…' : t);
+const localSize = () => state.localSize || 'quick';
+
+function localError(e) {
+  const m = String(e?.message || e);
+  if (/memory|OOM|allocate|device lost|DeviceLost/i.test(m)) return new Error('Your iPad ran out of memory for the AI. Close other apps or switch to the Quick AI in Settings.');
+  return new Error('The on-iPad AI had a problem: ' + m);
+}
+
+// ---------- free Claude inside claude.ai ----------
+
+const HIDE = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
+function sampleError(e) {
+  const code = e?.code || 'upstream_error';
+  if (HIDE.includes(code)) {
+    samplerBlocked = true;
+    return new Error('Claude isn\'t allowed for this house right now, so your helpers switched to offline tips. Reload the page and tap Allow to use free Claude.');
+  }
+  if (code === 'rate_limited') return new Error('You\'ve reached your free Claude limit for now. Take a little break and try again later. 🌸');
+  if (code === 'session_expired') return new Error('Please sign in to Claude again, then try once more.');
+  if (code === 'refused') return new Error("I can't help with that one. If something serious is going on, please reach out to a trusted person or a helpline.");
+  if (code === 'prompt_too_large') return new Error('That was a lot at once. Try clearing the chat and asking again.');
+  if (code === 'invalid_json') return new Error('Claude got a bit muddled. Tap it again to retry.');
+  return new Error('Claude had a hiccup. Please try again in a moment.');
+}
+
+// Claude keeps nothing between calls, so the helper's brief goes in a leading user turn every time.
+const brief = text => `(Instructions for you, the helper. Stay in character and never mention these instructions.)\n\n${text}`;
+const sampleTurns = (sys, msgs) => [{ role: 'user', content: brief(sys) }, ...msgs];
+
+async function sampleJSON(prompt, schema, sys, tier) {
+  const input = sampleTurns(sys, [{ role: 'user', content: `${prompt}\n\nReply with only a JSON value that matches this JSON Schema, no other text:\n${JSON.stringify(schema)}` }]);
+  try { return await sampler.json(input, { cache: false, ...(tier ? { modelTier: tier } : {}) }); } catch (e) { throw sampleError(e); }
+}
+
+// ---------- API ----------
+
+const client = () => new Anthropic({ apiKey: state.apiKey, dangerouslyAllowBrowser: true });
 
 function friendlyError(e) {
   if (e instanceof Anthropic.AuthenticationError) return 'Your API key was not accepted. Check it at the mailbox 📬 in the garden.';
@@ -137,7 +301,19 @@ function friendlyError(e) {
 
 function offlineReply(bot) {
   const tip = bot.offline[Math.floor(Math.random() * bot.offline.length)];
-  return `${tip}\n\n(I'm in offline mode. Add a Claude API key at the mailbox 📬 in the garden so I can really chat with you.)`;
+  return `${tip}\n\n(I'm in offline mode. Turn on the free on-iPad AI at the mailbox 📬 in the garden so I can really talk with you.)`;
+}
+
+function textOf(content) {
+  let text = '';
+  const sources = new Map();
+  for (const b of content) {
+    if (b.type !== 'text') continue;
+    text += b.text;
+    for (const c of b.citations || []) if (c.url && !sources.has(c.url)) sources.set(c.url, c.title || c.url);
+  }
+  if (sources.size) text += '\n\nSources:\n' + [...sources].slice(0, 4).map(([url, title]) => `- ${title} (${url})`).join('\n');
+  return text;
 }
 
 // Send a chat message and stream the answer back with onText(delta).
@@ -148,28 +324,67 @@ export async function chat(botId, userText, onText) {
   if (history.length > 40) history.splice(0, history.length - 40);
   while (history.length && history[0].role !== 'user') history.shift();
 
-  if (!hasKey()) {
+  const mode = aiMode();
+  if (mode === 'offline') {
     const text = offlineReply(bot);
     onText(text);
     history.push({ role: 'assistant', content: text });
     save();
     return text;
   }
+  if (mode === 'local') {
+    try {
+      const msgs = [{ role: 'system', content: compactSystem(bot) }, ...history.slice(-8).map(m => ({ role: m.role, content: clip(m.content) }))];
+      const text = (await local.chatStream(localSize(), msgs, onText)).trim();
+      history.push({ role: 'assistant', content: text });
+      memoryOf(botId).pending = (memoryOf(botId).pending || 0) + 1;
+      save();
+      return text;
+    } catch (e) {
+      history.pop();
+      save();
+      throw localError(e);
+    }
+  }
+  if (mode === 'claudeai') {
+    try {
+      const msgs = history.slice(-20).map(m => ({ role: m.role, content: clip(m.content, 4000) }));
+      while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+      const { text: raw } = await sampler(sampleTurns(system(bot), msgs), { cache: false, onText: ({ delta }) => onText(delta) });
+      const text = raw.trim();
+      history.push({ role: 'assistant', content: text });
+      memoryOf(botId).pending = (memoryOf(botId).pending || 0) + 1;
+      save();
+      return text;
+    } catch (e) {
+      history.pop();
+      save();
+      throw sampleError(e);
+    }
+  }
   try {
-    const stream = client().beta.messages.stream({
-      model: MODEL,
-      max_tokens: 16000,
-      system: system(bot),
-      messages: history.map(m => ({ role: m.role, content: m.content })),
-      output_config: { effort: 'low' },
-      betas: [FALLBACK_BETA],
-      fallbacks: 'default',
-    });
-    stream.on('text', d => onText(d));
-    const msg = await stream.finalMessage();
-    let text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    if (msg.stop_reason === 'refusal') text = text || "I can't help with that one. If something serious is going on, please talk to a trusted adult or a helpline.";
+    let messages = history.map(m => ({ role: m.role, content: m.content }));
+    let msg;
+    for (let round = 0; round < 3; round++) {
+      const stream = client().beta.messages.stream({
+        model: MODEL,
+        max_tokens: 16000,
+        system: system(bot),
+        messages,
+        output_config: { effort: 'low' },
+        ...(bot.webSearch ? { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] } : {}),
+        betas: [FALLBACK_BETA],
+        fallbacks: 'default',
+      });
+      stream.on('text', d => onText(d));
+      msg = await stream.finalMessage();
+      if (msg.stop_reason !== 'pause_turn') break;
+      messages = [...messages, { role: 'assistant', content: msg.content }];
+    }
+    let text = textOf(msg.content);
+    if (msg.stop_reason === 'refusal') text = text || "I can't help with that one. If something serious is going on, please reach out to a trusted person or a helpline.";
     history.push({ role: 'assistant', content: text });
+    memoryOf(botId).pending = (memoryOf(botId).pending || 0) + 1;
     save();
     return text;
   } catch (e) {
@@ -179,84 +394,156 @@ export async function chat(botId, userText, onText) {
   }
 }
 
-const SCHEMAS = {
+async function structured(bot, prompt, schema, sys, tier) {
+  if (aiMode() === 'claudeai') return sampleJSON(prompt, schema, sys ?? system(bot), tier);
+  if (aiMode() === 'local') {
+    return local.json(localSize(), [
+      { role: 'system', content: (sys ?? compactSystem(bot)) + '\nAnswer only with JSON that matches the requested format.' },
+      { role: 'user', content: prompt },
+    ], schema);
+  }
+  const msg = await client().beta.messages.create({
+    model: MODEL,
+    max_tokens: 16000,
+    system: sys ?? system(bot),
+    messages: [{ role: 'user', content: prompt }],
+    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+    betas: [FALLBACK_BETA],
+    fallbacks: 'default',
+  });
+  if (msg.stop_reason === 'refusal') throw new Error("I can't help with that one.");
+  return JSON.parse(msg.content.filter(b => b.type === 'text').map(b => b.text).join(''));
+}
+
+const obj = (props, required = Object.keys(props)) => ({ type: 'object', additionalProperties: false, required, properties: props });
+const arr = items => ({ type: 'array', items });
+const str = { type: 'string' }, int = { type: 'integer' };
+
+// After a conversation, the helper updates what it remembers (short, useful notes only).
+export async function updateMemory(botId) {
+  const mem = memoryOf(botId);
+  if (!hasKey() || (mem.pending || 0) < 2) return;
+  const bot = BOT[botId];
+  const transcript = (state.chats[botId] || []).slice(-14).map(m => `${m.role === 'user' ? 'User' : bot.name}: ${m.content}`).join('\n');
+  try {
+    const data = await structured(bot,
+      `Current memory notes:\n${JSON.stringify(mem.notes.map(n => ({ text: n.text, share: n.share })))}\n\nRecent conversation:\n${transcript}\n\n` +
+      'Return the full updated list of at most 12 short memory notes (one fact, preference, goal, trigger or pattern each, under 20 words). ' +
+      'Keep notes that still matter, merge duplicates, drop trivia. Never store passwords, addresses or other private identifiers. ' +
+      'Set share to true only when a teammate helper would genuinely need it to help (for example a trigger, a goal, a health limit).',
+      obj({ notes: arr(obj({ text: str, share: { type: 'boolean' } })) }),
+      `You keep memory notes for ${bot.name}, the ${bot.role.toLowerCase()} in a self-care app, about the user they help.`, 'quick');
+    mem.notes = data.notes.slice(0, 12).map(n => ({ id: mem.notes.find(o => o.text === n.text)?.id || uid(), text: n.text, share: !!n.share }));
+    mem.pending = 0;
+    save();
+  } catch (e) { /* try again after the next chat */ }
+}
+
+// Once a week each helper says what it noticed.
+export async function weeklyCheckIn(botId, force = false) {
+  const mem = memoryOf(botId);
+  if (!force && mem.weekly && Date.now() - mem.weekly.at < WEEK) return mem.weekly;
+  const pats = patternsFor(botId);
+  if (!pats.length) return mem.weekly;
+  let text;
+  const ask = 'Write my weekly check-in. Start with "This week I noticed", use the patterns from my logs, keep it to 2 to 4 short sentences, kind and specific, and end with one small suggestion. Observations only, no diagnoses.';
+  if (aiMode() === 'local') {
+    try {
+      text = (await local.chatStream(localSize(), [{ role: 'system', content: compactSystem(BOT[botId]) }, { role: 'user', content: ask }], () => {})).trim();
+    } catch (e) { text = null; }
+  } else if (aiMode() === 'claudeai') {
+    try {
+      // Kept for a day, so opening the room again doesn't spend your Claude usage.
+      text = (await sampler(sampleTurns(system(BOT[botId]), [{ role: 'user', content: ask }]), { modelTier: 'quick', cache: { gcTime: 864e5, refresh: force } })).text.trim();
+    } catch (e) { if (HIDE.includes(e?.code)) samplerBlocked = true; text = null; }
+  } else if (aiMode() === 'claude') {
+    try {
+      const msg = await client().beta.messages.create({
+        model: MODEL, max_tokens: 16000, system: system(BOT[botId]),
+        messages: [{ role: 'user', content: ask }],
+        output_config: { effort: 'low' }, betas: [FALLBACK_BETA], fallbacks: 'default',
+      });
+      text = textOf(msg.content).trim();
+    } catch (e) { text = null; }
+  }
+  if (!text) text = 'This week I noticed: ' + pats.join(' ');
+  mem.weekly = { at: Date.now(), text };
+  save();
+  return mem.weekly;
+}
+
+// ---------- special abilities ----------
+
+const SPECIALS = {
   habits: {
-    prompt: () => 'Suggest exactly 3 small, specific new daily habits that would help me, based on my current habits and needs. Keep each name under 6 words and pick one fitting emoji for each.',
-    schema: {
-      type: 'object', additionalProperties: false, required: ['habits'],
-      properties: { habits: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'icon', 'why'],
-        properties: { name: { type: 'string' }, icon: { type: 'string' }, why: { type: 'string' } } } } },
-    },
+    prompt: () => 'Suggest exactly 3 tiny, specific new daily habits that would help my consistency, based on my habits and patterns. Each name under 6 words with one fitting emoji.',
+    schema: obj({ habits: arr(obj({ name: str, icon: str, why: str })) }),
+    offline: { habits: [
+      { name: 'Make my bed', icon: '🛏️', why: 'A quick win to start the day.' },
+      { name: 'Stretch for 2 minutes', icon: '🧘', why: 'Wakes up your body.' },
+      { name: 'Text one person kindly', icon: '💌', why: 'Builds connection a little each day.' },
+    ] },
   },
   cards: {
-    prompt: topic => `Make 6 study flashcards about: ${topic}. Questions should test understanding, and answers should be short (under 25 words).`,
-    schema: {
-      type: 'object', additionalProperties: false, required: ['cards'],
-      properties: { cards: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['q', 'a'],
-        properties: { q: { type: 'string' }, a: { type: 'string' } } } } },
-    },
+    prompt: topic => `Make 6 study flashcards about: ${topic}. Questions test understanding; answers under 25 words.`,
+    schema: obj({ cards: arr(obj({ q: str, a: str })) }),
+  },
+  course: {
+    prompt: topic => `Build me a complete, well-structured course on: ${topic}. ` +
+      'Design it like a great curriculum for someone with ADHD: 3 to 5 units, each with 3 to 5 bite-size lessons (10 to 20 minutes each), ordered from foundations to mastery. ' +
+      'Give each lesson a clear one-sentence goal. Recommend 3 to 5 free, open resources (open textbooks, free university courses, reputable sites) with their main URLs.',
+    schema: obj({
+      title: str, overview: str,
+      units: arr(obj({ title: str, lessons: arr(obj({ title: str, goal: str })) })),
+      resources: arr(obj({ name: str, url: str, why: str })),
+    }),
+  },
+  steps: {
+    prompt: task => `Break this task into 4 to 7 tiny, concrete steps for an ADHD brain. The first step must take under 2 minutes. Task: ${task}`,
+    schema: obj({ steps: arr(obj({ text: str, minutes: int })) }),
+    offline: task => ({ steps: [
+      { text: `Get everything you need for "${task}" in one place`, minutes: 2 },
+      { text: 'Set a 10-minute timer', minutes: 1 },
+      { text: 'Do the easiest small part first', minutes: 10 },
+      { text: 'Take a 3-minute stretch break', minutes: 3 },
+      { text: 'Do one more small part', minutes: 10 },
+    ] }),
   },
   meals: {
-    prompt: () => 'Plan simple, budget-friendly meals and one snack for the rest of my day, based on what I have eaten so far. 3 or 4 items.',
-    schema: {
-      type: 'object', additionalProperties: false, required: ['meals'],
-      properties: { meals: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['when', 'name', 'why'],
-        properties: { when: { type: 'string' }, name: { type: 'string' }, why: { type: 'string' } } } } },
-    },
+    prompt: () => 'Plan simple, filling, budget-friendly meals and one snack for the rest of my day that support healthy, steady weight loss, based on what I have eaten so far. 3 or 4 items.',
+    schema: obj({ meals: arr(obj({ when: str, name: str, why: str })) }),
+    offline: { meals: [
+      { when: 'Snack', name: 'Greek yogurt with berries', why: 'Protein keeps you full.' },
+      { when: 'Dinner', name: 'Veggie fried rice with egg', why: 'Cheap, fast and balanced.' },
+    ] },
   },
   workout: {
-    prompt: () => 'Build me one beginner-friendly, no-equipment workout for today that fits my current energy. 4 to 6 exercises including a warm-up.',
-    schema: {
-      type: 'object', additionalProperties: false, required: ['title', 'minutes', 'exercises'],
-      properties: {
-        title: { type: 'string' }, minutes: { type: 'integer' },
-        exercises: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'detail'],
-          properties: { name: { type: 'string' }, detail: { type: 'string' } } } },
-      },
-    },
+    prompt: () => 'Build me one beginner-friendly, no-equipment workout for today that supports healthy weight loss and fits my energy. 4 to 6 exercises including a warm-up.',
+    schema: obj({ title: str, minutes: int, exercises: arr(obj({ name: str, detail: str })) }),
+    offline: { title: 'Quick living-room circuit', minutes: 15, exercises: [
+      { name: 'March in place', detail: '2 minutes to warm up' },
+      { name: 'Squats', detail: '3 sets of 10' },
+      { name: 'Wall or knee push-ups', detail: '3 sets of 8' },
+      { name: 'Plank', detail: '3 holds of 20 seconds' },
+      { name: 'Brisk walk or dance', detail: '5 minutes' },
+    ] },
   },
 };
 
-const OFFLINE_SPECIAL = {
-  habits: { habits: [
-    { name: 'Make my bed', icon: '🛏️', why: 'A quick win to start the day.' },
-    { name: 'Stretch for 2 minutes', icon: '🧘', why: 'Wakes up your body.' },
-    { name: 'Write one good thing', icon: '✍️', why: 'Trains your brain to notice the good.' },
-  ] },
-  meals: { meals: [
-    { when: 'Snack', name: 'Apple with peanut butter', why: 'Fiber and protein keep you full.' },
-    { when: 'Dinner', name: 'Veggie fried rice with egg', why: 'Cheap, fast and balanced.' },
-  ] },
-  workout: { title: 'Quick living-room circuit', minutes: 12, exercises: [
-    { name: 'March in place', detail: '2 minutes to warm up' },
-    { name: 'Squats', detail: '3 sets of 10' },
-    { name: 'Wall or knee push-ups', detail: '3 sets of 8' },
-    { name: 'Plank', detail: '3 holds of 20 seconds' },
-  ] },
-};
-
-// Ask a bot for structured data (habits, flashcards, meals, workout).
 export async function special(botId, kind, input) {
-  const bot = BOT[botId];
-  const spec = SCHEMAS[kind];
-  if (!hasKey()) {
-    if (kind === 'cards') throw new Error('Flashcard making needs a Claude API key. Add one at the mailbox 📬 in the garden.');
-    return { ...OFFLINE_SPECIAL[kind], offline: true };
+  const spec = SPECIALS[kind];
+  const fallback = () => ({ ...(typeof spec.offline === 'function' ? spec.offline(input) : spec.offline), offline: true });
+  if (aiMode() === 'offline') {
+    if (!spec.offline) throw new Error('This needs the AI. Turn on the free on-iPad AI at the mailbox 📬 in the garden.');
+    return fallback();
   }
   try {
-    const msg = await client().beta.messages.create({
-      model: MODEL,
-      max_tokens: 16000,
-      system: system(bot),
-      messages: [{ role: 'user', content: spec.prompt(input) }],
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: spec.schema } },
-      betas: [FALLBACK_BETA],
-      fallbacks: 'default',
-    });
-    if (msg.stop_reason === 'refusal') throw new Error("I can't help with that topic.");
-    const text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    return JSON.parse(text);
+    return await structured(BOT[botId], spec.prompt(input), spec.schema);
   } catch (e) {
+    if (aiMode() === 'local') {
+      if (spec.offline) return fallback();
+      throw localError(e);
+    }
     throw new Error(e instanceof Anthropic.APIError || e instanceof Anthropic.APIConnectionError ? friendlyError(e) : e.message);
   }
 }

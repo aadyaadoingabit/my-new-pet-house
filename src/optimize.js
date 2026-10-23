@@ -1,5 +1,5 @@
 // Speed-ups for phones: combine pieces that never move, so the GPU draws far fewer things.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.min.js';
 import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
 
 // Groups marked userData.flatten have their meshes moved up into the parent (keeping where they are),

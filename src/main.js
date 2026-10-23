@@ -1,12 +1,12 @@
 // My Pet House: a cute 3D house where you are the pet.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.min.js';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { OutlineEffect } from '../vendor/OutlineEffect.js';
 import { state, save, bus, tickNeeds, moodScore, NEEDS, levelInfo } from './state.js';
 import { buildWorld, ROOMS, findPath, walkable, clampToRoom, roomAt, labelSprite } from './world.js';
 import { createAvatar } from './avatar.js';
 import { mergeStatic, adaptiveQuality } from './optimize.js';
-import { BOTS } from './ai.js';
+import { BOTS, initClaudeAI } from './ai.js';
 import { initPanels, openPanel, closePanel, currentPanel, hooks, timer, timerText, toast, refresh } from './panels.js';
 
 const $ = s => document.querySelector(s);
@@ -145,6 +145,13 @@ hooks.avatar = avatar;
 hooks.onClose = () => { if (me.seated) standUp(); else avatar.setPose('idle'); };
 hooks.onReward = () => { if (!me.seated) avatar.cheer(); };
 hooks.goToBot = id => { const it = world.interactables.find(i => i.bot === id); if (it) goTo(it); };
+hooks.onRename = id => {
+  const b = BOTS.find(x => x.id === id);
+  world.relabelBot(id, `${b.emoji} ${b.name}`, `${b.name} (${b.role})`);
+  buildGoMenu();
+};
+// Owl studies right beside your desk during a focus session (body doubling)
+hooks.studyBuddy = on => world.moveBot('owl', on ? [4.05, -5.35] : null);
 hooks.onChange = full => {
   applyTime();
   if (full) {
@@ -383,10 +390,13 @@ function applyTime() {
 
 // "Go to" menu
 const goSel = $('#goTo');
-const byRoom = {};
-for (const it of world.interactables) (byRoom[it.room] ||= []).push(it);
-goSel.innerHTML = '<option value="">🚶 Go to…</option>' + Object.entries(ROOMS).filter(([id]) => byRoom[id]).map(([id, r]) =>
-  `<optgroup label="${r.emoji} ${r.name}">${byRoom[id].filter((it, i, a) => a.findIndex(o => o.name === it.name) === i).map(it => `<option value="${it.id}">${it.emoji} ${it.name}</option>`).join('')}</optgroup>`).join('');
+function buildGoMenu() {
+  const byRoom = {};
+  for (const it of world.interactables) (byRoom[it.room] ||= []).push(it);
+  goSel.innerHTML = '<option value="">🚶 Go to…</option>' + Object.entries(ROOMS).filter(([id]) => byRoom[id]).map(([id, r]) =>
+    `<optgroup label="${r.emoji} ${r.name}">${byRoom[id].filter((it, i, a) => a.findIndex(o => o.name === it.name) === i).map(it => `<option value="${it.id}">${it.emoji} ${it.name}</option>`).join('')}</optgroup>`).join('');
+}
+buildGoMenu();
 goSel.addEventListener('change', () => {
   const it = world.interactables.find(i => i.id === goSel.value);
   if (it) {
@@ -427,7 +437,10 @@ async function toggleFullscreen() {
   } catch (e) { toast('Full screen is not available here. Add it to your Home Screen instead!'); }
 }
 $('[data-hud="fullscreen"]').hidden = !canFullscreen || installedApp;
-const portraitBlock = matchMedia('(pointer: coarse) and (orientation: portrait)');
+// Inside Claude the house sits in a panel that can be tall even when the iPad is sideways, so never block there.
+const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
+document.documentElement.classList.toggle('framed', framed);
+const portraitBlock = framed ? { matches: false } : matchMedia('(pointer: coarse) and (orientation: portrait)');
 
 if (!state.welcomed) {
   $('#welcome').hidden = false;
@@ -545,9 +558,16 @@ document.addEventListener('mousemove', e => {
 });
 
 // home-screen app: offline support and an install hint
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+if (!framed && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  try { navigator.serviceWorker.register('./sw.js').catch(() => {}); } catch (e) { /* not allowed here */ }
 }
+
+// Opened inside claude.ai? Then the helpers can use free Claude on your own Claude account.
+initClaudeAI().then(ok => {
+  if (!ok) return;
+  toast('💜 You opened your house inside Claude, so your helpers use free Claude');
+  refresh();
+});
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -577,6 +597,6 @@ $('#installHint').addEventListener('click', async e => {
 });
 const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
 const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-if (iOS && !standalone && state.welcomed) setTimeout(() => showInstallHint(false), 4000);
+if (iOS && !standalone && !framed && state.welcomed) setTimeout(() => showInstallHint(false), 4000);
 
 window.__petHouse = { world, avatar, me, goTo, openPanel, refresh, renderer, scene };
