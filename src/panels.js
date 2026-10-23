@@ -7,7 +7,7 @@ import { BOT, BOTS, chat, special, hasKey, aiMode, aiLabel, claudeAIAvailable, r
 import { weightTrend } from './patterns.js';
 import { LOCAL_MODELS, webgpuInfo, load as loadLocal, remove as removeLocal, isDownloaded, isReady as localLoaded } from './localai.js';
 import { SHOP_ITEMS } from './world.js';
-import { LOOKS } from './avatar.js';
+import { LOOKS, FACES as LOOK_FACES } from './avatar.js';
 
 export const hooks = { world: null, avatar: null, onClose: () => {}, onChange: () => {} };
 
@@ -381,20 +381,50 @@ PANELS.journal = () => {
   };
 };
 
-// 👕 Wardrobe
+// 👕 Wardrobe: dress her up, pick her face, save your favourite fits
+let wTab = 'face';
+const BOTTOMS = { skirt: 'Skirt', tee: 'Jeans', hoodie: 'Leggings', overalls: 'Overalls', gym: 'Shorts', pjs: 'Pajama pants' };
 PANELS.wardrobe = () => {
   const a = state.avatar;
+  const picker = (key, label) => `<label class="swatch custom ${LOOKS[key].includes(a[key]) ? '' : 'on'}" title="Any color you like">
+    <input type="color" data-look="${key}" value="${esc(a[key])}" aria-label="Pick any ${label.toLowerCase()}"></label>`;
   const sw = (key, label) => `<h3>${label}</h3><div class="swatches">${LOOKS[key].map(c =>
-    `<button class="swatch ${a[key] === c ? 'on' : ''}" style="background:${c}" data-act="look" data-k="${key}" data-v="${c}" aria-label="${label} ${c}"></button>`).join('')}</div>`;
+    `<button class="swatch ${a[key] === c ? 'on' : ''}" style="background:${c}" data-act="look" data-k="${key}" data-v="${c}" aria-label="${label} ${c}"></button>`).join('')}${picker(key, label)}</div>`;
+  const chips = (key, label) => `<h3>${label}</h3><div class="row">${LOOKS[key].map(([v, name, emoji]) =>
+    `<button class="chip ${a[key] === v ? 'on' : ''}" data-act="look" data-k="${key}" data-v="${v}">${emoji ? emoji + ' ' : ''}${name}</button>`).join('')}</div>`;
+  const tabs = [['face', '😊 Face'], ['hair', '💇‍♀️ Hair'], ['fit', '👗 Fits'], ['extras', '🎀 Extras'], ['saved', '💖 Saved']];
+  let body = '';
+  if (wTab === 'face') {
+    body = `
+      <label for="nameIn">Name</label>
+      <div class="row"><input id="nameIn" value="${esc(state.name)}" placeholder="Your name"><button data-act="saveName">Save</button></div>
+      <h3>Expression</h3>
+      <div class="faces">${LOOK_FACES.map(([v, emoji, name]) => `<button class="face-btn ${a.face === v ? 'on' : ''}" data-act="look" data-k="face" data-v="${v}"><span>${emoji}</span>${name}</button>`).join('')}</div>
+      <p class="small muted">✨ Auto shows how you're really doing: happy when your needs are full, sleepy when you're tired, and peaceful while she sleeps.</p>
+      ${sw('skin', 'Skin tone')}${sw('eyes', 'Eye color')}`;
+  } else if (wTab === 'hair') {
+    body = chips('hairStyle', 'Hair style') + sw('hair', 'Hair color');
+  } else if (wTab === 'fit') {
+    body = chips('outfit', 'Outfit') + sw('shirt', a.outfit === 'dress' ? 'Dress' : a.outfit === 'pjs' ? 'Pajama top' : 'Top') +
+      (a.outfit === 'dress' ? '' : sw('pants', BOTTOMS[a.outfit] || 'Bottoms'));
+  } else if (wTab === 'extras') {
+    body = chips('shoeStyle', 'Shoes') + sw('shoes', 'Shoe color') + chips('acc', 'Accessory') +
+      (a.acc === 'none' ? '' : sw('accent', 'Accessory & hair-tie color'));
+  } else {
+    const dots = l => ['skin', 'hair', 'shirt', 'pants', 'accent'].map(k => `<i style="background:${esc(l[k])}"></i>`).join('');
+    body = `
+      <p class="muted">Save looks you love and switch between them in one tap.</p>
+      <div class="row"><input id="fitName" placeholder="Name this fit (e.g. Study day)" maxlength="24"><button data-act="saveFit">Save this look</button></div>
+      ${state.fits.length ? state.fits.map(f => `<div class="fit-row"><span class="fit-dots">${dots(f.look)}</span><b>${esc(f.name)}</b>
+        <button class="small" data-act="wearFit" data-id="${f.id}">Wear</button><button class="ghost small" data-act="delFit" data-id="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></div>`).join('')
+        : '<p class="small muted">No saved fits yet.</p>'}`;
+  }
   return {
     title: '👕 Wardrobe',
     html: `
-      <p class="muted">Design yourself! Changes show up right away.</p>
-      <label for="nameIn">Name</label>
-      <div class="row"><input id="nameIn" value="${esc(state.name)}" placeholder="Your name"><button data-act="saveName">Save</button></div>
-      ${sw('skin', 'Skin')}
-      <h3>Hair style</h3><div class="row">${LOOKS.hairStyle.map(s => `<button class="chip ${a.hairStyle === s ? 'on' : ''}" data-act="look" data-k="hairStyle" data-v="${s}">${s}</button>`).join('')}</div>
-      ${sw('hair', 'Hair color')}${sw('shirt', 'Top')}${sw('pants', 'Bottoms')}${sw('shoes', 'Shoes')}`,
+      <div class="row tabs">${tabs.map(([v, l]) => `<button class="chip ${wTab === v ? 'on' : ''}" data-act="wtab" data-v="${v}">${l}</button>`).join('')}</div>
+      ${body}
+      <div class="row" style="margin-top:14px"><button class="secondary" data-act="randomLook">🎲 Surprise me</button></div>`,
   };
 };
 
@@ -1156,6 +1186,40 @@ const ACT = {
     hooks.avatar?.setLook(state.avatar);
     refresh();
   },
+  wtab: el => { wTab = el.dataset.v; refresh(); },
+  randomLook: () => {
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    const val = x => (Array.isArray(x) ? x[0] : x);
+    for (const k of ['hair', 'eyes', 'shirt', 'pants', 'shoes', 'accent']) state.avatar[k] = pick(LOOKS[k]);
+    for (const k of ['hairStyle', 'outfit', 'shoeStyle', 'acc']) state.avatar[k] = val(pick(LOOKS[k]));
+    save();
+    hooks.avatar?.setLook(state.avatar);
+    hooks.avatar?.showFace('starry', 1.5);
+    refresh();
+  },
+  saveFit: () => {
+    const name = ($('#fitName')?.value || '').trim() || `Fit ${state.fits.length + 1}`;
+    const { face, ...look } = state.avatar;
+    state.fits.unshift({ id: uid(), name, look });
+    state.fits = state.fits.slice(0, 12);
+    save();
+    toast(`💖 Saved "${name}"`);
+    refresh();
+  },
+  wearFit: el => {
+    const f = state.fits.find(x => x.id === el.dataset.id);
+    if (!f) return;
+    Object.assign(state.avatar, f.look);
+    save();
+    hooks.avatar?.setLook(state.avatar);
+    hooks.avatar?.showFace('joy', 1.5);
+    toast(`👗 Wearing "${f.name}"`);
+    refresh();
+  },
+  delFit: async el => {
+    const f = state.fits.find(x => x.id === el.dataset.id);
+    if (f && await askYes(`Delete the fit "${f.name}"?`)) { state.fits = state.fits.filter(x => x !== f); save(); refresh(); }
+  },
   saveName: () => { state.name = $('#nameIn').value.trim(); save(); toast(state.name ? `Hi, ${state.name}! 🏡` : 'Saved'); },
 
   hygiene: el => {
@@ -1364,7 +1428,12 @@ export function initPanels() {
       if (s) s.textContent = 'Saved ✓';
     }
   });
+  p.addEventListener('input', e => {
+    const k = e.target.dataset.look;
+    if (k) { state.avatar[k] = e.target.value; hooks.avatar?.setLook(state.avatar); }
+  });
   p.addEventListener('change', e => {
+    if (e.target.dataset.look) { save(); refresh(); return; }
     if (e.target.id === 'skillSel') timer.skill = e.target.value;
     if (e.target.id === 'buddyIn') studyBuddy = e.target.checked;
     if (e.target.id === 'unitIn') { state.weightUnit = e.target.value; save(); refresh(); }

@@ -369,7 +369,7 @@ function updateHUD() {
   $('#coins').textContent = `🪙 ${state.coins}`;
   $('#level').textContent = `⭐ Lv ${lv.level}`;
   $('#level').title = `${lv.xp} XP · ${lv.toNext} to next level`;
-  avatar.setMoodColor(score);
+  avatar.setMoodColor(score, state.needs.energy);
   updateBubble();
 }
 
@@ -463,6 +463,8 @@ const clock = new THREE.Clock();
 let acc = 0, accTime = 0, accSave = 0, lastRoom = null;
 const viewShift = [0, 0];
 const camGoal = new THREE.Vector3();
+let dressing = null;   // camera offset to return to after the wardrobe
+const dressAway = new THREE.Vector3(), dressPos = new THREE.Vector3();
 const camDelta = new THREE.Vector3();
 
 function loop() {
@@ -483,9 +485,9 @@ function loop() {
     if (me.path.length) followPath(dt);
     else { me.speed = Math.max(0, me.speed - DECEL * dt); me.turnRate *= 0.8; }
   }
-  avatar.root.rotation.y = me.heading;
   if (marker.material.opacity > 0) marker.scale.setScalar(1 + Math.sin(t * 6) * 0.12);
 
+  avatar.root.rotation.y = me.heading;
   avatar.update(dt, t, me.speed, me.turnRate);
   world.update(t, dt);
 
@@ -502,12 +504,30 @@ function loop() {
   else world.tvMat.color.set('#3a3346');
   world.monitorMat.color.set(timer.running ? '#ffd93d' : '#7fd4ff');
 
-  // camera glides after you, looking slightly ahead
-  camGoal.set(p.x + Math.sin(me.heading) * me.speed * 0.35, 0.8 + p.y * 0.4, p.z + Math.cos(me.heading) * me.speed * 0.35);
-  camDelta.copy(camGoal).sub(controls.target).multiplyScalar(1 - Math.exp(-dt * 4));
-  controls.target.add(camDelta);
-  camera.position.add(camDelta);
-  controls.update();
+  if (currentPanel() === 'wardrobe' && !me.seated && !me.path.length) {
+    // dressing room: glide in close and turn her to face you
+    if (!dressing) { dressing = camera.position.clone().sub(controls.target); controls.minDistance = 1.6; controls.maxPolarAngle = 1.5; }
+    const away = dressAway.set(camera.position.x - p.x, 0, camera.position.z - p.z).normalize();
+    camGoal.set(p.x, p.y + 1.35, p.z);
+    controls.target.lerp(camGoal, 1 - Math.exp(-dt * 4));
+    dressPos.copy(camGoal).addScaledVector(away, 2.6).setY(p.y + 1.75);
+    camera.position.lerp(dressPos, 1 - Math.exp(-dt * 3));
+    me.heading += wrap(Math.atan2(away.x, away.z) - me.heading) * Math.min(1, dt * 5);
+    controls.update();
+  } else {
+    if (dressing) {
+      // back out to where the camera was before
+      dressPos.copy(controls.target).add(dressing);
+      camera.position.lerp(dressPos, 1 - Math.exp(-dt * 4));
+      if (camera.position.distanceTo(dressPos) < 0.05) { dressing = null; controls.minDistance = 4; controls.maxPolarAngle = 1.3; }
+    }
+    // camera glides after you, looking slightly ahead
+    camGoal.set(p.x + Math.sin(me.heading) * me.speed * 0.35, 0.8 + p.y * 0.4, p.z + Math.cos(me.heading) * me.speed * 0.35);
+    camDelta.copy(camGoal).sub(controls.target).multiplyScalar(1 - Math.exp(-dt * 4));
+    controls.target.add(camDelta);
+    camera.position.add(camDelta);
+    controls.update();
+  }
 
   // keep your character visible next to an open panel
   const mobile = window.innerWidth <= 640;

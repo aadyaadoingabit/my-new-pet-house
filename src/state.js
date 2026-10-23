@@ -21,7 +21,8 @@ const DEFAULT_STATE = () => ({
   xp: 0,
   claimed: {},           // { date: { key: count } } daily caps for coin rewards
   owned: [],             // shop item ids
-  avatar: { skin: '#e0ac69', hair: '#3b2219', hairStyle: 'short', shirt: '#e07a5f', pants: '#3d405b', shoes: '#222222' },
+  avatar: DEFAULT_LOOK(),
+  fits: [],              // saved outfits: [{ id, name, look }]
   apiKey: '',
   chats: {},             // { botId: [{ role, content }] }
   timeMode: 'real',      // real | day | night
@@ -62,6 +63,19 @@ const DEFAULT_STATE = () => ({
   weightUnit: 'kg',
 });
 
+// How your character looks. Older saves are upgraded by normalizeLook.
+export const DEFAULT_LOOK = () => ({
+  skin: '#f3c6a5', hair: '#2b2233', hairStyle: 'twintails', eyes: '#5b3a29',
+  outfit: 'skirt', shirt: '#ffc2dc', pants: '#a98bff', shoes: '#ffffff', shoeStyle: 'flats',
+  acc: 'bow', accent: '#ff5fa2', face: 'auto',
+});
+const OLD_HAIR = { short: 'bob', buzz: 'pixie' };
+export function normalizeLook(l) {
+  const look = Object.assign(DEFAULT_LOOK(), l || {});
+  look.hairStyle = OLD_HAIR[look.hairStyle] || look.hairStyle;
+  return look;
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -69,7 +83,7 @@ function load() {
       const data = JSON.parse(raw);
       const merged = Object.assign(DEFAULT_STATE(), data);
       merged.needs = Object.assign(DEFAULT_STATE().needs, data.needs);
-      merged.avatar = Object.assign(DEFAULT_STATE().avatar, data.avatar);
+      merged.avatar = normalizeLook(data.avatar);
       return merged;
     }
   } catch (e) { /* storage unavailable or corrupt: start fresh */ }
@@ -85,6 +99,7 @@ export function save() {
 
 export function replaceState(data) {
   state = data ? Object.assign(DEFAULT_STATE(), data) : DEFAULT_STATE();
+  state.avatar = normalizeLook(state.avatar);
   save();
 }
 
