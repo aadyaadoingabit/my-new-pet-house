@@ -560,3 +560,9 @@ html, body { height: 100%; height: 100dvh; }
 .ai-choice.on { border-color: var(--ink); background: #fff7fb; box-shadow: 0 3px 0 var(--ink); }
 .ai-choice p { margin: 6px 0; }
 .crisis-msg { background: #fff3e3 !important; border: 2px solid #ffb35c !important; }
+
+/* "are you sure?" box */
+.ask-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(59, 42, 63, .35); padding: 16px; }
+.ask-card { background: #fff; color: var(--ink); border: 2.5px solid var(--ink); box-shadow: 0 5px 0 var(--ink); border-radius: 20px; padding: 18px 20px; max-width: 360px; width: 100%; }
+.ask-card p { margin: 0 0 14px; font-weight: 500; }
+.ask-card .row { justify-content: flex-end; }

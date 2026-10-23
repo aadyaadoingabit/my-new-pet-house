@@ -23,6 +23,22 @@ export function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+// A cute "are you sure?" box (the browser's own popups are blocked when the house runs inside Claude).
+export function askYes(msg, yes = 'Yes', no = 'Cancel') {
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.className = 'ask-overlay';
+    box.innerHTML = `<div class="ask-card" role="alertdialog" aria-modal="true"><p></p><div class="row"><button class="secondary" data-a="no"></button><button data-a="yes"></button></div></div>`;
+    box.querySelector('p').textContent = msg;
+    box.querySelector('[data-a=yes]').textContent = yes;
+    box.querySelector('[data-a=no]').textContent = no;
+    const done = v => { box.remove(); resolve(v); };
+    box.addEventListener('click', e => { const a = e.target.closest('[data-a]')?.dataset.a; if (a) done(a === 'yes'); else if (e.target === box) done(false); });
+    document.body.append(box);
+    box.querySelector('[data-a=yes]').focus();
+  });
+}
+
 function reward(key, coins, limit, needs, msg) {
   const got = earn(key, coins, limit);
   boost(needs);
@@ -989,8 +1005,8 @@ const ACT = {
     openPanel('chat:owl');
     sendChat(`Give me a quick 3-question review quiz on "${l.title}" from my course "${c.title}". Ask one question at a time.`);
   },
-  delCourse: el => {
-    if (!confirm('Delete this course and its progress?')) return;
+  delCourse: async el => {
+    if (!await askYes('Delete this course and its progress?')) return;
     state.courses = state.courses.filter(c => c.id !== el.dataset.id);
     save();
     openPanel('skills');
@@ -1047,9 +1063,9 @@ const ACT = {
     state.habits.push({ id: uid(), name, icon: $('#habitIcon').value });
     save(); refresh();
   },
-  delHabit: el => {
+  delHabit: async el => {
     const h = state.habits.find(x => x.id === el.dataset.id);
-    if (h && confirm(`Remove "${h.name}"?`)) { state.habits = state.habits.filter(x => x.id !== h.id); save(); refresh(); }
+    if (h && await askYes(`Remove "${h.name}"?`)) { state.habits = state.habits.filter(x => x.id !== h.id); save(); refresh(); }
   },
 
   preset: el => { timer.duration = timer.remaining = Number(el.dataset.min) * 60; refresh(); },
@@ -1071,9 +1087,9 @@ const ACT = {
   timerStop: () => { if (timer.running) timer.remaining = (timer.endAt - Date.now()) / 1000; finishTimer(false); },
 
   addSkill: () => { const v = $('#skillName').value.trim(); if (v && !state.skills.includes(v)) { state.skills.push(v); save(); refresh(); } },
-  delSkill: el => {
+  delSkill: async el => {
     const s = el.dataset.skill;
-    if (state.skills.length > 1 && confirm(`Remove "${s}"? Logged time stays in your history.`)) { state.skills = state.skills.filter(x => x !== s); save(); refresh(); }
+    if (state.skills.length > 1 && await askYes(`Remove "${s}"? Logged time stays in your history.`)) { state.skills = state.skills.filter(x => x !== s); save(); refresh(); }
   },
   logManual: () => {
     const m = Math.round(Number($('#manualMin').value));
@@ -1237,7 +1253,7 @@ const ACT = {
     refresh();
   },
   removeLocal: async () => {
-    if (!confirm('Delete the downloaded AI from this iPad? You can download it again later.')) return;
+    if (!await askYes('Delete the downloaded AI from this iPad? You can download it again later.')) return;
     try { await removeLocal(state.localSize || 'quick'); } catch (e) { /* already gone */ }
     state.localReady = false;
     save(); refresh();
@@ -1253,8 +1269,8 @@ const ACT = {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
-  reset: () => {
-    if (confirm('Erase ALL your data in this browser? Download a backup first if you want to keep it.')) {
+  reset: async () => {
+    if (await askYes('Erase ALL your data in this browser? Download a backup first if you want to keep it.')) {
       replaceState(null);
       hooks.onChange(true);
       toast('House reset');
@@ -1281,7 +1297,7 @@ const ACT = {
     chatUI.specialHTML = '';
     refresh();
   },
-  clearChat: () => { const id = current.split(':')[1]; if (confirm('Clear this conversation?')) { state.chats[id] = []; save(); refresh(); } },
+  clearChat: async () => { const id = current.split(':')[1]; if (await askYes('Clear this conversation?')) { state.chats[id] = []; save(); refresh(); } },
 };
 
 function keepAndRefresh(ids) {
