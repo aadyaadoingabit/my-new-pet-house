@@ -3,7 +3,7 @@ import {
   state, save, replaceState, uid, today, lastNDays, niceDate, shortDay, esc, sum, clamp,
   earn, boost, levelInfo, habitsDone, focusMinutes, workoutMinutes, avgMood, journalHasContent, streak, NEEDS,
 } from './state.js';
-import { BOT, BOTS, chat, special, hasKey, aiMode, aiLabel, renameBot, memoryOf, canShare, updateMemory, weeklyCheckIn, todaysPromise } from './ai.js';
+import { BOT, BOTS, chat, special, hasKey, aiMode, aiLabel, claudeAIAvailable, renameBot, memoryOf, canShare, updateMemory, weeklyCheckIn, todaysPromise } from './ai.js';
 import { weightTrend } from './patterns.js';
 import { LOCAL_MODELS, webgpuInfo, load as loadLocal, remove as removeLocal, isDownloaded, isReady as localLoaded } from './localai.js';
 import { SHOP_ITEMS } from './world.js';
@@ -611,13 +611,19 @@ PANELS.settings = () => ({
   html: `
     <h3>🤖 AI brain</h3>
     <p class="small muted">Choose what powers your helpers. Right now: <b>${aiLabel()}</b>.</p>
+    ${claudeAIAvailable() ? `<div class="ai-choice ${aiMode() === 'claudeai' ? 'on' : ''}">
+      <b>💜 Free Claude (you're inside Claude)</b>
+      <p class="small">Because you opened your house inside claude.ai, your helpers talk with Claude on your own Claude account: free, no API key. The first message asks you to <b>Allow</b>. Free accounts have a usage limit, so if Claude says to take a break, try again later. Owl can't search the web here.</p>
+      ${aiMode() !== 'claudeai' ? '<p class="small">You picked the paid Claude key, so that is used instead. <button class="ghost small" data-act="clearKey">Use free Claude</button></p>' : '<p class="small">✅ On and ready.</p>'}
+    </div>` : ''}
     <div class="ai-choice ${(state.aiProvider ?? 'local') === 'local' ? 'on' : ''}">
-      <b>🌸 Free on-iPad AI</b>
+      <b>🌸 Free on-iPad AI</b>${claudeAIAvailable() ? ' <span class="small muted">(for when you open the house outside Claude)</span>' : ''}
       <p class="small">Free forever and private: runs on your iPad, so your chats never leave it. Needs iPadOS 26 or newer. A bit slower and less clever than Claude.</p>
       <div class="row">${Object.entries(LOCAL_MODELS).map(([k, m]) => `<label class="chip ${(state.localSize || 'quick') === k ? 'on' : ''}"><input type="radio" name="localSize" value="${k}" ${(state.localSize || 'quick') === k ? 'checked' : ''} hidden>${m.name} · ${m.size}</label>`).join('')}</div>
       <p class="small muted">${LOCAL_MODELS[state.localSize || 'quick'].note}. One-time download, use Wi-Fi.</p>
       ${aiUI.downloading ? `<div class="bar" style="height:12px"><i id="aiBar" style="width:${Math.round(aiUI.progress * 100)}%"></i></div><p class="small" id="aiText">${esc(aiUI.text)}</p>`
         : state.localReady ? `<p class="small">✅ Downloaded and ready. <button class="ghost small" data-act="useLocal">Use this</button><button class="ghost small" data-act="removeLocal">Delete download</button></p>`
+        : claudeAIAvailable() ? '<p class="small muted">Download it from your home-screen app, not from inside Claude.</p>'
         : `<button data-act="downloadLocal">⬇️ Download free AI</button>`}
       ${aiUI.error ? `<p class="small" style="color:#c0392b">${esc(aiUI.error)}</p>` : ''}
     </div>

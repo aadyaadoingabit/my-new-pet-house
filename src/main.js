@@ -6,7 +6,7 @@ import { state, save, bus, tickNeeds, moodScore, NEEDS, levelInfo } from './stat
 import { buildWorld, ROOMS, findPath, walkable, clampToRoom, roomAt, labelSprite } from './world.js';
 import { createAvatar } from './avatar.js';
 import { mergeStatic, adaptiveQuality } from './optimize.js';
-import { BOTS } from './ai.js';
+import { BOTS, initClaudeAI } from './ai.js';
 import { initPanels, openPanel, closePanel, currentPanel, hooks, timer, timerText, toast, refresh } from './panels.js';
 
 const $ = s => document.querySelector(s);
@@ -555,9 +555,17 @@ document.addEventListener('mousemove', e => {
 });
 
 // home-screen app: offline support and an install hint
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
+if (!framed && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  try { navigator.serviceWorker.register('./sw.js').catch(() => {}); } catch (e) { /* not allowed here */ }
 }
+
+// Opened inside claude.ai? Then the helpers can use free Claude on your own Claude account.
+initClaudeAI().then(ok => {
+  if (!ok) return;
+  toast('💜 You opened your house inside Claude, so your helpers use free Claude');
+  refresh();
+});
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -587,6 +595,6 @@ $('#installHint').addEventListener('click', async e => {
 });
 const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
 const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-if (iOS && !standalone && state.welcomed) setTimeout(() => showInstallHint(false), 4000);
+if (iOS && !standalone && !framed && state.welcomed) setTimeout(() => showInstallHint(false), 4000);
 
 window.__petHouse = { world, avatar, me, goTo, openPanel, refresh, renderer, scene };

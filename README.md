@@ -37,7 +37,8 @@ Every helper:
 
 ### What powers the helpers (Settings → mailbox 📬)
 
-- **🌸 Free on-iPad AI (default):** runs completely on your iPad with [WebLLM](https://github.com/mlc-ai/web-llm) and Meta's open Llama 3.2 models. Free, private (chats never leave the device) and works offline. One-time download: *Quick* (about 0.9 GB) or *Smarter* (about 2.3 GB, best on M1 iPads or newer). Needs iPadOS 26 or newer (WebGPU).
+- **💜 Free Claude inside claude.ai:** open your house as a Claude artifact and the helpers talk with Claude on your own Claude account (free accounts work; there is a usage limit). No API key. The first message asks you to tap **Allow**. Owl can't web search here.
+- **🌸 Free on-iPad AI (default elsewhere):** runs completely on your iPad with [WebLLM](https://github.com/mlc-ai/web-llm) and Meta's open Llama 3.2 models. Free, private (chats never leave the device) and works offline. One-time download: *Quick* (about 0.9 GB) or *Smarter* (about 2.3 GB, best on M1 iPads or newer). Needs iPadOS 26 or newer (WebGPU).
 - **✨ Claude (optional, paid):** the smartest option, plus web search for Owl. Paste an API key from [platform.claude.com](https://platform.claude.com); each message costs a little.
 - **Offline mode:** with neither, helpers give built-in tips, tiny steps and pattern check-ins.
 
