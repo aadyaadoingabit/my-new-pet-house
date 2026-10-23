@@ -17,7 +17,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
   <div id="stage"></div>
@@ -101,10 +100,16 @@
         'In this folder run: <code>python3 -m http.server</code><br>then open <code>http://localhost:8000</code>,<br>' +
         'or use the GitHub Pages link.';
     }
-    window.addEventListener('error', e => {
+    const showProblem = msg => {
       const t = document.getElementById('loadingText');
-      if (t) t.textContent = 'Something went wrong loading the house: ' + e.message;
-    });
+      if (t) t.textContent = 'Something went wrong loading the house: ' + msg;
+    };
+    window.addEventListener('error', e => showProblem(e.message || (e.target && e.target.src) || 'a file did not load'), true);
+    window.addEventListener('unhandledrejection', e => showProblem((e.reason && e.reason.message) || String(e.reason)));
+    setTimeout(() => {
+      if (document.getElementById('loading') && !/wrong/.test(document.getElementById('loadingText').textContent))
+        showProblem('it is taking too long. Close and reopen the page. If it keeps happening, take a screenshot of this message.');
+    }, 25000);
   </script>
   <script type="module" src="src/main.js"></script>
 </body>

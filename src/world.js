@@ -1,6 +1,6 @@
 // Builds the 3D house in a Murakami x Sanrio inspired style: rooms, furniture, garden,
 // lights, shop decor and the AI helper mascots.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.min.js';
 import {
   toon, noOutline, roundedBox, facePlane, makeFlower, patternTexture, checkerTexture, woodTexture,
   RAINBOW, INK, FONT,

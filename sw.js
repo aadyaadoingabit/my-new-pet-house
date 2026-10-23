@@ -1,7 +1,7 @@
 // Lets My Pet House open offline after the first visit.
 // App files: network first (so updates show up right away), cached copy when offline.
 // Libraries and fonts: cached first, since they never change.
-const CACHE = 'pet-house-v2';
+const CACHE = 'pet-house-v3';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './src/main.js', './src/world.js', './src/avatar.js', './src/style.js', './src/state.js',

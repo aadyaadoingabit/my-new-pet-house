@@ -1,5 +1,5 @@
 // My Pet House: a cute 3D house where you are the pet.
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.min.js';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { OutlineEffect } from '../vendor/OutlineEffect.js';
 import { state, save, bus, tickNeeds, moodScore, NEEDS, levelInfo } from './state.js';
@@ -437,7 +437,10 @@ async function toggleFullscreen() {
   } catch (e) { toast('Full screen is not available here. Add it to your Home Screen instead!'); }
 }
 $('[data-hud="fullscreen"]').hidden = !canFullscreen || installedApp;
-const portraitBlock = matchMedia('(pointer: coarse) and (orientation: portrait)');
+// Inside Claude the house sits in a panel that can be tall even when the iPad is sideways, so never block there.
+const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
+document.documentElement.classList.toggle('framed', framed);
+const portraitBlock = framed ? { matches: false } : matchMedia('(pointer: coarse) and (orientation: portrait)');
 
 if (!state.welcomed) {
   $('#welcome').hidden = false;
@@ -555,7 +558,6 @@ document.addEventListener('mousemove', e => {
 });
 
 // home-screen app: offline support and an install hint
-const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
 if (!framed && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
   try { navigator.serviceWorker.register('./sw.js').catch(() => {}); } catch (e) { /* not allowed here */ }
 }
